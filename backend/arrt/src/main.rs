@@ -58,6 +58,7 @@ async fn main() {
         .route("/api/fraud/report", post(routes::fraud_report::report))
         .route("/api/fraud/benford", get(routes::advanced::benford))
         .route("/api/fraud/duplicates", get(routes::advanced::duplicates))
+        .route("/api/fraud/document", post(routes::document::analyze))
         .with_state(state)
         .layer(cors);
 

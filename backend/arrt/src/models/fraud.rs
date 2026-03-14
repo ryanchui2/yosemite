@@ -85,6 +85,19 @@ pub struct DuplicatesResponse {
     pub ai_explanation: Option<String>,
 }
 
+// ── Document / Invoice Fraud ──────────────────────────────────────────────────
+
+#[derive(Serialize)]
+pub struct DocumentFraudResponse {
+    pub document_type: String,
+    pub risk_level: String,
+    pub risk_score: u32,
+    pub fraud_signals: Vec<String>,
+    pub legitimate_indicators: Vec<String>,
+    pub summary: String,
+    pub recommended_action: String,
+}
+
 #[derive(Deserialize)]
 pub struct FraudReportRequest {
     pub transaction_id: String,
