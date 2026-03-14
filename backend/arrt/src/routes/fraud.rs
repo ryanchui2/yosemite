@@ -1,7 +1,7 @@
 use axum::{extract::State, Json};
 
 use crate::models::fraud::{FraudResult, ScanRequest, ScanResponse, Transaction};
-use crate::services::{anomaly_service, fraud_rules, gemini};
+use crate::services::{anomaly_service, fraud_rules, llm};
 use crate::state::AppState;
 
 
@@ -36,7 +36,7 @@ pub async fn scan(
 
         let risk_level = fraud_rules::risk_level(risk_score).to_string();
 
-        let ai_explanation = gemini::explain_fraud(&triggered_rules, &tx.transaction_id, risk_score)
+        let ai_explanation = llm::explain_fraud(&triggered_rules, &tx.transaction_id, risk_score)
             .await
             .ok();
 

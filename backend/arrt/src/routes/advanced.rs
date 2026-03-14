@@ -2,7 +2,7 @@ use axum::{extract::State, Json};
 
 use crate::models::fraud::{BenfordResponse, DuplicatesResponse};
 use crate::models::transaction::Transaction;
-use crate::services::{anomaly_service, gemini};
+use crate::services::{anomaly_service, llm};
 use crate::state::AppState;
 
 pub async fn benford(State(state): State<AppState>) -> Json<BenfordResponse> {
@@ -23,7 +23,7 @@ pub async fn benford(State(state): State<AppState>) -> Json<BenfordResponse> {
             result.chi_square.unwrap_or(0.0),
             digits.join(", ")
         )];
-        result.ai_explanation = gemini::explain_fraud(&rules, "BATCH-BENFORD", 75).await.ok();
+        result.ai_explanation = llm::explain_fraud(&rules, "BATCH-BENFORD", 75).await.ok();
     }
 
     Json(result)
@@ -45,7 +45,7 @@ pub async fn duplicates(State(state): State<AppState>) -> Json<DuplicatesRespons
             result.total_duplicate_groups,
             transactions.len()
         )];
-        result.ai_explanation = gemini::explain_fraud(&rules, "BATCH-DUPLICATES", 60).await.ok();
+        result.ai_explanation = llm::explain_fraud(&rules, "BATCH-DUPLICATES", 60).await.ok();
     }
 
     Json(result)

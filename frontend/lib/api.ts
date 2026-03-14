@@ -19,6 +19,15 @@ export interface FraudScanResponse {
   results: FraudResult[];
 }
 
+export interface FraudReportSummary {
+  report_count: number;
+  ai_generated: boolean;
+  common_vulnerabilities: string[];
+  potential_reasons: string[];
+  improvement_advice: string[];
+  disclaimer: string;
+}
+
 export interface Transaction {
   transaction_id: string;
   order_id: string | null;
@@ -53,6 +62,12 @@ export async function scanFraud(transactionIds?: string[]): Promise<FraudScanRes
     body: JSON.stringify(transactionIds ? { transaction_ids: transactionIds } : {}),
   });
   if (!res.ok) throw new Error(`Fraud scan failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchFraudReportSummary(): Promise<FraudReportSummary> {
+  const res = await fetch(`${BACKEND_URL}/api/fraud/report/summary`);
+  if (!res.ok) throw new Error(`Fraud report summary failed: ${res.status}`);
   return res.json();
 }
 
