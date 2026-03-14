@@ -31,14 +31,14 @@ pub async fn explain_fraud(
     let prompt = build_prompt(transaction_id, risk_score, &rules_text);
 
     let url = format!(
-        "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={}",
+        "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={}",
         api_key
     );
 
     let body = json!({
         "contents": [{ "parts": [{ "text": prompt }] }],
         "generationConfig": {
-            "maxOutputTokens": 150,
+            "maxOutputTokens": 400,
             "temperature": 0.3
         }
     });
