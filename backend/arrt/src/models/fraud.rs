@@ -1,4 +1,19 @@
 use serde::{Deserialize, Serialize};
+use sqlx::FromRow;
+
+#[derive(FromRow)]
+pub struct Transaction {
+    pub transaction_id: String,
+    pub customer_name: Option<String>,
+    pub amount: Option<f64>,
+    pub cvv_match: Option<bool>,
+    pub avs_result: Option<String>,
+    pub address_match: Option<bool>,
+    pub ip_is_vpn: Option<bool>,
+    pub card_present: Option<bool>,
+    pub entry_mode: Option<String>,
+    pub refund_status: Option<String>,
+}
 
 #[derive(Deserialize)]
 pub struct ScanRequest {
