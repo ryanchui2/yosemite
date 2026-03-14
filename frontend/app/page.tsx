@@ -33,47 +33,55 @@ function rowsToCSVFile(headers: string[], rows: Record<string, string>[]): File 
 function DropZone({
   hint,
   onFile,
+  onRemove,
   fileName,
 }: {
   hint: string;
   onFile: (f: File) => void;
+  onRemove?: () => void;
   fileName?: string;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
 
-  function handle(file: File) {
-    onFile(file);
-  }
-
   return (
-    <div
-      onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
-      onDragLeave={() => setDragging(false)}
-      onDrop={(e) => { e.preventDefault(); setDragging(false); const f = e.dataTransfer.files[0]; if (f) handle(f); }}
-      onClick={() => inputRef.current?.click()}
-      className={`rounded-2xl border-2 border-dashed px-4 py-5 text-center cursor-pointer transition-colors ${
-        dragging ? "border-blue-400 bg-blue-50" : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
-      }`}
-    >
-      <input
-        ref={inputRef}
-        type="file"
-        accept=".csv"
-        className="hidden"
-        onChange={(e) => { const f = e.target.files?.[0]; if (f) handle(f); }}
-      />
-      {fileName ? (
-        <div>
-          <p className="text-xs font-medium text-gray-700 truncate">{fileName}</p>
-          <p className="text-[11px] text-gray-400 mt-0.5">Drop to replace</p>
-        </div>
-      ) : (
-        <div className="flex flex-col items-center gap-1.5">
-          <Upload className="h-4 w-4 text-gray-400" />
-          <p className="text-xs text-gray-500">Drop CSV or click to browse</p>
-          <p className="text-[11px] text-gray-400">{hint}</p>
-        </div>
+    <div className="relative">
+      <div
+        onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={(e) => { e.preventDefault(); setDragging(false); const f = e.dataTransfer.files[0]; if (f) onFile(f); }}
+        onClick={() => inputRef.current?.click()}
+        className={`rounded-2xl border-2 border-dashed px-4 py-5 text-center cursor-pointer transition-colors ${dragging ? "border-blue-400 bg-blue-50" : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
+          }`}
+      >
+        <input
+          ref={inputRef}
+          type="file"
+          accept=".csv"
+          className="hidden"
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f); }}
+        />
+        {fileName ? (
+          <div className="pr-4">
+            <p className="text-xs font-medium text-gray-700 truncate">{fileName}</p>
+            <p className="text-[11px] text-gray-400 mt-0.5">Drop to replace</p>
+          </div>
+        ) : (
+          <div className="flex flex-col items-center gap-1.5">
+            <Upload className="h-4 w-4 text-gray-400" />
+            <p className="text-xs text-gray-500">Drop CSV or click to browse</p>
+            <p className="text-[11px] text-gray-400">{hint}</p>
+          </div>
+        )}
+      </div>
+      {fileName && onRemove && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onRemove(); }}
+          className="absolute top-2 right-2 h-5 w-5 rounded-full bg-gray-200 hover:bg-red-100 hover:text-red-500 flex items-center justify-center text-gray-400 transition-colors"
+          title="Remove file"
+        >
+          <span className="text-[10px] font-bold leading-none">✕</span>
+        </button>
       )}
     </div>
   );
@@ -200,6 +208,7 @@ export default function Dashboard() {
           <DropZone
             hint="date, vendor, amount"
             onFile={handleAnomalyFile}
+            onRemove={() => { setCsvHeaders([]); setCsvRows([]); setCsvFileName(undefined); setAnomaliesData(null); setError(null); }}
             fileName={csvFileName}
           />
 
@@ -233,6 +242,7 @@ export default function Dashboard() {
           <DropZone
             hint="name, country, registration_number"
             onFile={(f) => { setSanctionsFile(f); setError(null); }}
+            onRemove={() => { setSanctionsFile(null); setSanctionsData(null); setError(null); }}
             fileName={sanctionsFile?.name}
           />
 
@@ -262,7 +272,7 @@ export default function Dashboard() {
             onChange={(e) => setGeoCountries(e.target.value)}
             placeholder="Myanmar, Nigeria, Turkey"
             rows={3}
-            className="w-full rounded-2xl border border-gray-200 px-3 py-2.5 text-sm text-gray-700 placeholder:text-gray-400 resize-none focus:outline-none focus:ring-2 focus:ring-purple-400"
+            className="w-full rounded-2xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-700 placeholder:text-gray-400 resize-none focus:outline-none focus:ring-2 focus:ring-purple-400"
           />
 
           <Button
@@ -283,11 +293,10 @@ export default function Dashboard() {
             <button
               key={tab.id}
               onClick={() => setActiveReport(tab.id)}
-              className={`px-4 py-2 text-sm font-medium rounded-t-xl transition-colors ${
-                activeReport === tab.id
+              className={`px-4 py-2 text-sm font-medium rounded-t-xl transition-colors ${activeReport === tab.id
                   ? "text-gray-900 border-b-2 border-gray-900"
                   : "text-gray-400 hover:text-gray-600"
-              }`}
+                }`}
             >
               {tab.label}
             </button>
