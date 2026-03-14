@@ -15,7 +15,7 @@ async fn main() {
     let app = Router::new().route("/", get(root));
 
     let port: u16 = std::env::var("PORT")
-        .unwrap_or_else(|_| "3000".to_string())
+        .unwrap_or_else(|_| "3001".to_string())
         .parse()
         .expect("PORT must be a number");
 
