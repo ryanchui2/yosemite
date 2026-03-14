@@ -10,7 +10,7 @@
 |-------|-----------|-----|
 | **Frontend** | Next.js 14 (App Router) + TypeScript + Tailwind | Fast to build, you know it cold |
 | **Backend** | Rust (Axum) | Performance flex, impressive to judges, strong type safety |
-| **Database** | Supabase (hosted Postgres + auth + storage + realtime) | Zero config, free tier, instant setup, built-in file storage for CSV uploads |
+| **Database** | Render (hosted Postgres) | Reliable hosted Postgres, easy env var config |
 | **ML/Anomaly** | Python micro-service OR Rust `smartcore` crate | Isolation Forest for anomaly detection |
 | **Fuzzy Matching** | `strsim` crate (Rust) | Jaro-Winkler / Levenshtein for sanctions name matching |
 | **AI Explanations** | Gemini API (Google AI Studio, free tier) | 15 RPM free, 1M tokens/day |
@@ -29,7 +29,7 @@ Rust is a bold call for a hackathon. Here's how to make it work without slowing 
 - `strsim` — fuzzy string matching (Jaro-Winkler, Levenshtein)
 - `reqwest` — HTTP client for Gemini API + UCDP API calls
 - `tokio` — async runtime
-- `sqlx` — async Postgres driver (connects to Supabase)
+- `sqlx` — async Postgres driver (connects to Render Postgres)
 - `uuid` — scan IDs
 - `chrono` — timestamps
 - `smartcore` — ML (Isolation Forest) OR call a Python sidecar
@@ -73,9 +73,9 @@ Rust is a bold call for a hackathon. Here's how to make it work without slowing 
 │  └─────────────────────────────────────────────────────┘ │
 │                          │                               │
 │                    ┌─────┴─────┐                         │
-│                    │ Supabase  │                         │
+│                    │  Render   │                         │
 │                    │ Postgres  │                         │
-│                    │ + Storage │                         │
+│                    │           │                         │
 │                    └───────────┘                         │
 └─────────────────────────────────────────────────────────┘
 ```
@@ -86,23 +86,23 @@ Rust is a bold call for a hackathon. Here's how to make it work without slowing 
 
 | Source | What | Access | Setup Time |
 |--------|------|--------|-----------|
-| **OpenSanctions** | 300K+ sanctioned entities (OFAC, EU, UN, UK, AU) | Download JSON from opensanctions.org/datasets — use `default` dataset | 2 min download, load into memory or Supabase at startup |
+| **OpenSanctions** | 300K+ sanctioned entities (OFAC, EU, UN, UK, AU) | Download JSON from opensanctions.org/datasets — use `default` dataset | 2 min download, load into memory or at startup |
 | **UCDP** | Georeferenced conflict events, state-based violence, fatalities | REST API: `https://ucdpapi.pcr.uu.se/api/` — free, no key, returns JSON | Zero setup, query on the fly |
 | **Gemini** | AI-generated risk explanations | API key from ai.google.dev (free tier: 15 RPM) | 1 min to get key |
-| **Supabase** | Postgres DB + file storage for CSV uploads | Create project at supabase.com | 2 min to create project, get connection string |
+| **Render Postgres** | Hosted Postgres DB | Use connection string from Render dashboard | Set DATABASE_URL env var |
 
 ---
 
-## Team Roles (Updated for Rust + Supabase)
+## Team Roles (Updated for Rust + Render Postgres)
 
 ### Person 1 — Frontend Lead (You)
 
-Owns the entire Next.js frontend + Supabase client integration.
+Owns the entire Next.js frontend + backend API integration.
 
 | Block | Hours | Deliverable |
 |-------|-------|-------------|
-| Setup | 0–2 | Next.js scaffold + Tailwind + Supabase client SDK + tab layout (3 tabs) |
-| Module 1 UI | 2–5 | Sanctions tab: CSV drag-drop upload → upload to Supabase Storage → trigger backend scan → results table with risk badges + expandable AI explanation cards |
+| Setup | 0–2 | Next.js scaffold + Tailwind + tab layout (3 tabs) |
+| Module 1 UI | 2–5 | Sanctions tab: CSV drag-drop upload → trigger backend scan → results table with risk badges + expandable AI explanation cards |
 | Module 2 UI | 5–8 | Anomaly tab: transaction CSV upload → results table with anomaly scores + bar/heat visualization |
 | Dashboard | 8–10 | Summary card (total scans, flags, risk level), PDF export button, header/branding |
 | Integration | 10–12 | Wire all API calls to Rust backend, loading states, error handling, empty states |
@@ -112,11 +112,11 @@ Owns the entire Next.js frontend + Supabase client integration.
 
 ### Person 2 — Rust Backend Lead
 
-Owns the Actix-Web server, all API endpoints, Supabase DB integration.
+Owns the Axum server, all API endpoints, Render Postgres integration.
 
 | Block | Hours | Deliverable |
 |-------|-------|-------------|
-| Setup | 0–2 | `cargo init`, Axum scaffold, Supabase Postgres connection via `sqlx`, CORS middleware, folder structure |
+| Setup | 0–2 | `cargo init`, Axum scaffold, Render Postgres connection via `sqlx`, CORS middleware, folder structure |
 | Sanctions Engine | 2–6 | OpenSanctions JSON loader → in-memory HashMap, `strsim` Jaro-Winkler fuzzy matching, `/api/sanctions` endpoint (accept CSV, parse with `csv` crate, match, return JSON) |
 | Anomaly Engine | 6–10 | Feature engineering in Rust OR Python sidecar for Isolation Forest, `/api/anomalies` endpoint |
 | DB Models | 10–12 | `sqlx` migrations: scans table, flagged_entities table, flagged_transactions table |
@@ -144,9 +144,9 @@ Owns deployment, PDF export, Devpost, demo video, pitch.
 
 | Block | Hours | Deliverable |
 |-------|-------|-------------|
-| Setup | 0–3 | GitHub repo + branch strategy, Supabase project creation (DB + Storage bucket for CSVs), `.env.example`, README |
-| Infra | 3–6 | Get Gemini API key, help P2 with Supabase connection, test OpenSanctions data loading |
-| Deploy v1 | 6–9 | Vercel deploy for frontend, Railway/Shuttle for Rust backend, Supabase connection string in env vars |
+| Setup | 0–3 | GitHub repo + branch strategy, Render Postgres setup, `.env.example`, README |
+| Infra | 3–6 | Get Gemini API key, help P2 with Render Postgres connection, test OpenSanctions data loading |
+| Deploy v1 | 6–9 | Vercel deploy for frontend, Railway/Shuttle for Rust backend, DATABASE_URL in env vars |
 | PDF Export | 9–12 | Build PDF compliance report generator (frontend-side with `jsPDF` or `@react-pdf/renderer`) |
 | Integration Test | 12–14 | Full end-to-end flow on deployed URLs, fix any issues |
 | Devpost | 14–16 | Write Devpost page, take screenshots, record 2-min demo video |
@@ -160,15 +160,15 @@ Owns deployment, PDF export, Devpost, demo video, pitch.
 
 ```
 HOUR 0-1  ★ EVERYONE DOES THIS SIMULTANEOUSLY ★
-├── P1:  npx create-next-app + Tailwind + Supabase JS client
+├── P1:  npx create-next-app + Tailwind
 ├── P2:  cargo init + axum + sqlx + strsim + reqwest in Cargo.toml
 ├── P3:  Download OpenSanctions default.json + start Faker script
-├── P4:  GitHub repo + Supabase project + Storage bucket + .env files
+├── P4:  GitHub repo + Render Postgres + .env files
 └── ALL:  Get Gemini API key (one person, share with team)
 
 HOUR 1-3
 ├── P1:  Tab layout + FileUpload component + ResultsTable (dummy data)
-├── P2:  Actix-Web server running + /health endpoint + Supabase connected
+├── P2:  Axum server running + /health endpoint + Render Postgres connected
 ├── P3:  Sample CSVs generated (vendors + transactions with planted flags)
 ├── P4:  Docker/local dev working for everyone, help P2 with setup
 └── ★ SYNC @ Hour 3: Everyone can run frontend + backend locally ★
@@ -193,7 +193,7 @@ HOUR 6-9
 
 HOUR 9-12
 ├── P1:  Dashboard summary card + wire all real API calls (replace dummy data)
-├── P2:  DB persistence (save scan results to Supabase) + error handling
+├── P2:  DB persistence (save scan results to Render Postgres) + error handling
 ├── P3:  Gemini client in Rust working + prompt quality iteration
 ├── P4:  PDF export working + integration testing on deployed version
 └── ★ MILESTONE: Both core modules fully working end-to-end ★
@@ -299,11 +299,11 @@ HOUR 18-21
 
 ---
 
-## Supabase Setup (Person 4 does this at Hour 0)
+## Database Setup — Render Postgres (Person 4 does this at Hour 0)
 
-1. Create project at supabase.com
-2. Note: Project URL, `anon` key, `service_role` key, database connection string
-3. Create Storage bucket: `csv-uploads` (public read, authenticated write)
+1. Create a Postgres database on render.com
+2. Copy the external connection string from the Render dashboard
+3. Set `DATABASE_URL` in `backend/arrt/.env`
 4. Run these SQL migrations:
 
 ```sql
@@ -412,10 +412,10 @@ risk = 0.4 * normalize(event_count) + 0.4 * normalize(fatalities) + 0.2 * normal
 |------|-----------|
 | Rust compilation too slow during iteration | Use `cargo watch -x run` for hot reload. Pre-write struct definitions at Hour 0 so the type system helps instead of fights |
 | `smartcore` Isolation Forest too painful in Rust | Fallback: tiny Python FastAPI sidecar (~30 lines) that wraps scikit-learn. Rust backend calls it via HTTP. Polyglot architecture is fine |
-| Supabase connection issues | Fallback: SQLite file locally, deploy with the file. Supabase is just Postgres so `sqlx` works identically |
-| Gemini rate limit hit during demo | Pre-cache explanations for demo data in Supabase. Serve cached responses during live demo |
+| Render Postgres connection issues | Fallback: SQLite file locally, deploy with the file. `sqlx` works identically with either |
+| Gemini rate limit hit during demo | Pre-cache explanations for demo data in DB. Serve cached responses during live demo |
 | OpenSanctions dataset too large for memory | Filter to top-5 lists (OFAC, EU, UN, UK, AU) — reduces to ~50K entities |
-| UCDP API slow or down | Pre-fetch data for demo countries at build time, cache in Supabase |
+| UCDP API slow or down | Pre-fetch data for demo countries at build time, cache in DB |
 | Team member burns out | 3-hour sleep break is mandatory between Phase 2 and 3 |
 
 ---
@@ -440,8 +440,7 @@ shieldai/
 │   │   ├── RiskSummary.tsx
 │   │   └── PDFExport.tsx
 │   ├── lib/
-│   │   ├── api.ts
-│   │   └── supabase.ts
+│   │   └── api.ts
 │   ├── package.json
 │   └── tailwind.config.ts
 ├── backend/

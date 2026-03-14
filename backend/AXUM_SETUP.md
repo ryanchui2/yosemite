@@ -280,9 +280,9 @@ RUST_LOG=debug
 
 ---
 
-## 9. Supabase Integration
+## 9. Postgres Integration (Render)
 
-Supabase exposes a standard PostgreSQL connection. The recommended approach in Rust is to connect via `sqlx` directly to Supabase's Postgres instance.
+The recommended approach in Rust is to connect via `sqlx` directly to a hosted Postgres instance (e.g. Render).
 
 ### Add Dependencies
 
@@ -294,11 +294,11 @@ uuid = { version = "1", features = ["v4", "serde"] }
 
 ### Connection Setup
 
-Find your connection string in Supabase: **Project Settings → Database → Connection string (URI mode)**.
+Find your connection string in the Render dashboard under your database's **Info** tab (External Database URL).
 
 ```env
 # .env
-DATABASE_URL=postgresql://postgres:[YOUR-PASSWORD]@db.[YOUR-PROJECT-REF].supabase.co:5432/postgres
+DATABASE_URL=postgresql://arrt_db_s3oh_user:H7wq2LCJbuvz5KMIgVDeYm6ortOzKlZT@dpg-d6qfmtsr85hc73esi4tg-a.oregon-postgres.render.com/arrt_db_s3oh
 ```
 
 ### Create a Connection Pool in `src/state.rs`
@@ -335,7 +335,7 @@ async fn main() {
         .max_connections(10)
         .connect(&database_url)
         .await
-        .expect("Failed to connect to Supabase");
+        .expect("Failed to connect to Postgres");
 
     let state = Arc::new(AppState { db: pool });
 
@@ -400,9 +400,9 @@ pub async fn create_item(
 }
 ```
 
-### Supabase JWT Auth (Optional)
+### JWT Auth (Optional)
 
-To protect routes using Supabase-issued JWTs, validate the token with the `jsonwebtoken` crate using your project's JWT secret (found in **Project Settings → API → JWT Secret**).
+To protect routes using JWTs, validate the token with the `jsonwebtoken` crate using your JWT secret.
 
 ```toml
 jsonwebtoken = "9"
@@ -433,7 +433,7 @@ impl<S: Send + Sync> FromRequestParts<S> for AuthUser {
             .and_then(|v| v.strip_prefix("Bearer "))
             .ok_or(StatusCode::UNAUTHORIZED)?;
 
-        let secret = std::env::var("SUPABASE_JWT_SECRET").expect("SUPABASE_JWT_SECRET must be set");
+        let secret = std::env::var("JWT_SECRET").expect("JWT_SECRET must be set");
 
         let data = decode::<Claims>(
             token,
@@ -454,7 +454,7 @@ async fn protected(AuthUser(claims): AuthUser) -> String {
 
 ```env
 # .env (add)
-SUPABASE_JWT_SECRET=your-jwt-secret-from-supabase-dashboard
+JWT_SECRET=your-jwt-secret
 ```
 
 ---
@@ -466,4 +466,4 @@ SUPABASE_JWT_SECRET=your-jwt-secret-from-supabase-dashboard
 - [Tokio docs](https://docs.rs/tokio)
 - [Tower middleware](https://docs.rs/tower)
 - [sqlx docs](https://docs.rs/sqlx)
-- [Supabase connection strings](https://supabase.com/docs/guides/database/connecting-to-postgres)
+- [Render Postgres docs](https://docs.render.com/databases)

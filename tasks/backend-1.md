@@ -1,4 +1,4 @@
-# Backend Person 1 — Supabase + Data Layer
+# Backend Person 1 — Render Postgres + Data Layer
 
 ## Your job
 
@@ -20,7 +20,7 @@ chrono = { version = "0.4", features = ["serde"] }
 ## Step 2 — Create `.env` in `backend/arrt/`
 
 ```env
-DATABASE_URL=postgresql://postgres:[PASSWORD]@db.yspzpbrgnmyostbvmtyu.supabase.co:5432/postgres
+DATABASE_URL=postgresql://arrt_db_s3oh_user:H7wq2LCJbuvz5KMIgVDeYm6ortOzKlZT@dpg-d6qfmtsr85hc73esi4tg-a.oregon-postgres.render.com/arrt_db_s3oh
 GEMINI_API_KEY=your-key-from-aistudio.google.com
 RUST_LOG=info
 PORT=3001
@@ -86,7 +86,7 @@ pub struct AppState {
 
 ---
 
-## Step 5 — Update `src/main.rs` to connect to Supabase
+## Step 5 — Update `src/main.rs` to connect to Render Postgres
 
 ```rust
 use axum::{routing::{get, post}, Router};
@@ -180,6 +180,6 @@ pub async fn list(State(state): State<AppState>) -> Json<Vec<Transaction>> {
 
 ## Done when
 
-`curl http://localhost:3001/api/transactions` returns JSON rows from Supabase.
+`curl http://localhost:3001/api/transactions` returns JSON rows from Render Postgres.
 
 Hand off `AppState` and the `transactions` table to Backend Person 2.

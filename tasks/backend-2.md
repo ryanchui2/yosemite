@@ -4,7 +4,7 @@
 
 Build `POST /api/fraud/scan` — takes transaction IDs, runs fraud scoring, returns flagged results with risk levels.
 
-Depends on: **Backend Person 1** finishing the Supabase connection + `AppState`.
+Depends on: **Backend Person 1** finishing the Render Postgres connection + `AppState`.
 
 ---
 
