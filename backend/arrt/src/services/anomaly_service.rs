@@ -4,10 +4,14 @@ use std::collections::HashMap;
 
 use crate::models::fraud::Transaction;
 
-const SIDECAR_URL: &str = "http://localhost:8000/score";
+fn ai_service_url() -> String {
+    let base = std::env::var("AI_SERVICE_URL")
+        .unwrap_or_else(|_| "http://localhost:8000".to_string());
+    format!("{}/score", base.trim_end_matches('/'))
+}
 
 #[derive(Serialize)]
-struct SidecarTx<'a> {
+struct AnomalyTx<'a> {
     transaction_id: &'a str,
     amount: Option<f64>,
     cvv_match: Option<bool>,
@@ -17,25 +21,25 @@ struct SidecarTx<'a> {
 }
 
 #[derive(Deserialize)]
-struct SidecarScore {
+struct AnomalyScore {
     transaction_id: String,
     anomaly_score: f64,
 }
 
 #[derive(Deserialize)]
-struct SidecarResponse {
-    scores: Vec<SidecarScore>,
+struct AnomalyResponse {
+    scores: Vec<AnomalyScore>,
 }
 
 /// Returns a map of transaction_id → anomaly_score (0.0–1.0, higher = more anomalous).
-/// Returns empty map if the sidecar is not running — never panics.
-pub async fn call_ml_sidecar(
+/// Returns empty map if the AI service is unavailable — never panics.
+pub async fn get_anomaly_scores(
     client: &Client,
     transactions: &[Transaction],
 ) -> HashMap<String, f64> {
-    let payload: Vec<SidecarTx> = transactions
+    let payload: Vec<AnomalyTx> = transactions
         .iter()
-        .map(|tx| SidecarTx {
+        .map(|tx| AnomalyTx {
             transaction_id: &tx.transaction_id,
             amount: tx.amount,
             cvv_match: tx.cvv_match,
@@ -46,13 +50,13 @@ pub async fn call_ml_sidecar(
         .collect();
 
     let result = client
-        .post(SIDECAR_URL)
+        .post(ai_service_url())
         .json(&serde_json::json!({ "transactions": payload }))
         .send()
         .await;
 
     match result {
-        Ok(res) => match res.json::<SidecarResponse>().await {
+        Ok(res) => match res.json::<AnomalyResponse>().await {
             Ok(data) => data
                 .scores
                 .into_iter()
