@@ -55,6 +55,7 @@ async fn main() {
         .route("/health", get(health))
         .route("/api/transactions", get(routes::transactions::list))
         .route("/api/fraud/scan", post(routes::fraud::scan))
+        .route("/api/fraud/report/summary", get(routes::fraud_report::summary))
         .route("/api/fraud/report", post(routes::fraud_report::report))
         .route("/api/fraud/benford", get(routes::advanced::benford))
         .route("/api/fraud/duplicates", get(routes::advanced::duplicates))

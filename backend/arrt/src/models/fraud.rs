@@ -99,3 +99,21 @@ pub struct FraudReportResponse {
     pub transaction_id: String,
     pub message: String,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FraudReportSummaryContent {
+    pub common_vulnerabilities: Vec<String>,
+    pub potential_reasons: Vec<String>,
+    pub improvement_advice: Vec<String>,
+    pub disclaimer: String,
+}
+
+#[derive(Serialize)]
+pub struct FraudReportSummaryResponse {
+    pub report_count: usize,
+    pub ai_generated: bool,
+    pub common_vulnerabilities: Vec<String>,
+    pub potential_reasons: Vec<String>,
+    pub improvement_advice: Vec<String>,
+    pub disclaimer: String,
+}

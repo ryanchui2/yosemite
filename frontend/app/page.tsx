@@ -8,8 +8,8 @@ import { Button } from "@/components/ui/button";
 import { ProtectionScore } from "@/components/ProtectionScore";
 import { FlaggedTransactions } from "@/components/FlaggedTransactions";
 import { RiskOverview } from "@/components/RiskOverview";
-import { scanSanctions, scanAnomalies, analyzeGeoRisk, scanFraud } from "@/lib/api";
-import type { SanctionsResponse, AnomaliesResponse, GeoRiskResponse, FraudScanResponse } from "@/lib/api";
+import { scanSanctions, scanAnomalies, analyzeGeoRisk, scanFraud, fetchFraudReportSummary } from "@/lib/api";
+import type { SanctionsResponse, AnomaliesResponse, GeoRiskResponse, FraudScanResponse, FraudReportSummary } from "@/lib/api";
 import { AlertTriangle, Globe, Shield, Upload } from "lucide-react";
 
 type Report = "anomalies" | "sanctions" | "georisk";
@@ -97,15 +97,36 @@ export default function Dashboard() {
   const [anomaliesData, setAnomaliesData] = useState<AnomaliesResponse | null>(null);
   const [geoRiskData, setGeoRiskData] = useState<GeoRiskResponse | null>(null);
   const [fraudScanData, setFraudScanData] = useState<FraudScanResponse | null>(null);
+  const [fraudReportSummary, setFraudReportSummary] = useState<FraudReportSummary | null>(null);
   const [fraudScanLoading, setFraudScanLoading] = useState(true);
 
   // Auto-fetch fraud scan on mount for the fraud detection dashboard
   useEffect(() => {
+    let cancelled = false;
+
     setFraudScanLoading(true);
-    scanFraud()
-      .then(setFraudScanData)
-      .catch(() => {})
-      .finally(() => setFraudScanLoading(false));
+
+    Promise.allSettled([scanFraud(), fetchFraudReportSummary()])
+      .then(([scanResult, summaryResult]) => {
+        if (cancelled) return;
+
+        if (scanResult.status === "fulfilled") {
+          setFraudScanData(scanResult.value);
+        }
+
+        if (summaryResult.status === "fulfilled") {
+          setFraudReportSummary(summaryResult.value);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setFraudScanLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Derive protection score from scan data
@@ -235,7 +256,11 @@ export default function Dashboard() {
             {fraudScanLoading ? (
               <p className="text-xs text-muted-foreground animate-pulse">Analyzing…</p>
             ) : (
-              <RiskOverview results={fraudResults} totalScanned={totalScanned} />
+              <RiskOverview
+                results={fraudResults}
+                totalScanned={totalScanned}
+                summary={fraudReportSummary}
+              />
             )}
           </div>
 
