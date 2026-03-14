@@ -17,6 +17,7 @@ pub fn score(tx: &Transaction) -> (u32, Vec<String>) {
     let mut score: u32 = 0;
     let mut rules: Vec<String> = Vec::new();
 
+    // --- Identity / Card Verification ---
     if tx.cvv_match == Some(false) {
         score += 35;
         rules.push("CVV mismatch".to_string());
@@ -34,11 +35,13 @@ pub fn score(tx: &Transaction) -> (u32, Vec<String>) {
         rules.push("Billing and shipping address mismatch".to_string());
     }
 
+    // --- Network / Device ---
     if tx.ip_is_vpn == Some(true) {
         score += 30;
         rules.push("VPN or proxy detected".to_string());
     }
 
+    // --- Card Present / Entry Mode ---
     if tx.card_present == Some(false) {
         if let Some(ref mode) = tx.entry_mode {
             if mode.to_lowercase().contains("key") {
@@ -48,6 +51,7 @@ pub fn score(tx: &Transaction) -> (u32, Vec<String>) {
         }
     }
 
+    // --- Return Fraud ---
     if let Some(ref refund) = tx.refund_status {
         if refund.to_lowercase().contains("requested")
             || refund.to_lowercase().contains("completed")
@@ -57,6 +61,7 @@ pub fn score(tx: &Transaction) -> (u32, Vec<String>) {
         }
     }
 
+    // --- High Amount Threshold ---
     if let Some(amt) = tx.amount {
         if amt > 5000.0 {
             score += 15;

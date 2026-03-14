@@ -1,59 +1,23 @@
 use axum::{extract::State, Json};
 
 use crate::models::fraud::{FraudResult, ScanRequest, ScanResponse, Transaction};
-use crate::services::{fraud_rules, gemini};
+use crate::services::fraud_rules;
+use crate::services::gemini;
 use crate::state::AppState;
 
-fn score_transaction(tx: &Transaction) -> (u32, Vec<String>) {
-    let mut score: u32 = 0;
-    let mut rules: Vec<String> = Vec::new();
-
-    if tx.cvv_match == Some(false) {
-        score += 35;
-        rules.push("CVV mismatch".to_string());
+fn to_fraud_rules_tx(tx: &Transaction) -> fraud_rules::Transaction {
+    fraud_rules::Transaction {
+        transaction_id: tx.transaction_id.clone(),
+        customer_name: tx.customer_name.clone(),
+        amount: tx.amount,
+        cvv_match: tx.cvv_match,
+        avs_result: tx.avs_result.clone(),
+        address_match: tx.address_match,
+        ip_is_vpn: tx.ip_is_vpn,
+        card_present: tx.card_present,
+        entry_mode: tx.entry_mode.clone(),
+        refund_status: tx.refund_status.clone(),
     }
-
-    if let Some(ref avs) = tx.avs_result {
-        if avs.to_lowercase().contains("no match") || avs.to_lowercase() == "n" {
-            score += 25;
-            rules.push("AVS address verification failed".to_string());
-        }
-    }
-
-    if tx.address_match == Some(false) {
-        score += 20;
-        rules.push("Billing and shipping address mismatch".to_string());
-    }
-
-    if tx.ip_is_vpn == Some(true) {
-        score += 30;
-        rules.push("VPN or proxy detected".to_string());
-    }
-
-    if tx.card_present == Some(false) {
-        if let Some(ref mode) = tx.entry_mode {
-            if mode.to_lowercase().contains("key") {
-                score += 20;
-                rules.push("Card not present + manually keyed entry".to_string());
-            }
-        }
-    }
-
-    if let Some(ref refund) = tx.refund_status {
-        if refund.to_lowercase().contains("requested") || refund.to_lowercase().contains("completed") {
-            score += 15;
-            rules.push(format!("Refund status: {}", refund));
-        }
-    }
-
-    if let Some(amt) = tx.amount {
-        if amt > 5000.0 {
-            score += 15;
-            rules.push(format!("High transaction amount: ${:.2}", amt));
-        }
-    }
-
-    (score, rules)
 }
 
 pub async fn scan(
@@ -79,7 +43,7 @@ pub async fn scan(
     let mut results: Vec<FraudResult> = Vec::new();
 
     for tx in transactions {
-        let (risk_score, triggered_rules) = score_transaction(&tx);
+        let (risk_score, triggered_rules) = fraud_rules::score(&to_fraud_rules_tx(&tx));
         if risk_score == 0 {
             continue;
         }
