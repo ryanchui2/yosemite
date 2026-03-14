@@ -41,7 +41,10 @@ async fn main() {
 
     tracing::info!("Migrations applied");
 
-    let state = AppState { db: pool };
+    let state = AppState { 
+        db: pool,
+        http: reqwest::Client::new(),
+     };
     let cors = CorsLayer::new()
         .allow_origin(Any)
         .allow_methods(Any)

@@ -12,6 +12,8 @@ async fn test_fraud_scoring() {
         avs_result: Some("N".to_string()),
         address_match: Some(false),
         ip_is_vpn: Some(true),
+        ip_country: None,
+        device_type: None,
         card_present: Some(false),
         entry_mode: Some("keyed".to_string()),
         refund_status: None,

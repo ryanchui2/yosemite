@@ -1,7 +1,7 @@
 use axum::{extract::State, Json};
 
 use crate::models::fraud::{FraudResult, ScanRequest, ScanResponse, Transaction};
-use crate::services::{fraud_rules, gemini};
+use crate::services::{fraud_rules, gemini, ml_sidecar};
 use crate::state::AppState;
 
 
@@ -25,9 +25,10 @@ pub async fn scan(
     };
 
     let total_scanned = transactions.len();
+    let anomaly_scores = ml_sidecar::call_ml_sidecar(&state.http, &transactions).await;
     let mut results: Vec<FraudResult> = Vec::new();
 
-    for tx in transactions {
+    for tx in &transactions {
         let (risk_score, triggered_rules) = fraud_rules::score(&tx);
         if risk_score == 0 {
             continue;
@@ -39,14 +40,17 @@ pub async fn scan(
             .await
             .ok();
 
+        let anomaly_score = anomaly_scores.get(&tx.transaction_id).copied();
+
         results.push(FraudResult {
-            transaction_id: tx.transaction_id,
-            customer_name: tx.customer_name,
+            transaction_id: tx.transaction_id.clone(),
+            customer_name: tx.customer_name.clone(),
             amount: tx.amount,
             risk_score,
             risk_level,
             triggered_rules,
             ai_explanation,
+            anomaly_score,
         });
     }
 

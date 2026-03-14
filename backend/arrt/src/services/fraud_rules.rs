@@ -109,6 +109,7 @@ mod tests {
             address_match: None,
             ip_is_vpn: None,
             ip_country: None,
+            device_type: None,
             card_present: None,
             entry_mode: None,
             refund_status: None,
@@ -185,17 +186,19 @@ mod tests {
 
     #[test]
     fn score_high_amount_adds_15() {
-        let t = tx(|t| t.amount = Some(5001.0));
+        let t = tx(|t| t.amount = Some(5001.50));
         let (s, rules) = score(&t);
         assert_eq!(s, 15);
-        assert!(rules.iter().any(|r| r.contains("5001.00")));
+        assert!(rules.iter().any(|r| r.contains("5001.50")));
     }
 
     #[test]
-    fn score_5000_not_high_amount() {
+    fn score_5000_round_amount() {
+        // 5000.0 triggers round-amount rule (+15) but not high-amount (must be > 5000)
         let t = tx(|t| t.amount = Some(5000.0));
-        let (s, _) = score(&t);
-        assert_eq!(s, 0);
+        let (s, rules) = score(&t);
+        assert_eq!(s, 15);
+        assert!(rules.iter().any(|r| r.contains("round amount")));
     }
 
     #[test]

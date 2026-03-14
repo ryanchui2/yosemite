@@ -23,6 +23,7 @@ pub struct ScanRequest {
     pub transaction_ids: Option<Vec<String>>,
 }
 
+
 #[derive(Serialize)]
 pub struct FraudResult {
     pub transaction_id: String,
@@ -32,6 +33,7 @@ pub struct FraudResult {
     pub risk_level: String, // "HIGH", "MEDIUM", "LOW"
     pub triggered_rules: Vec<String>,
     pub ai_explanation: Option<String>,
+    pub anomaly_score: Option<f64>,
 }
 
 #[derive(Serialize)]
