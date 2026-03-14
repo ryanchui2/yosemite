@@ -1,17 +1,4 @@
-// Stub transaction — replaced with models::transaction::Transaction once Backend 1 is done.
-// When swapping: delete this struct, change the import in routes/fraud.rs, nothing else changes.
-pub struct Transaction {
-    pub transaction_id: String,
-    pub customer_name: Option<String>,
-    pub amount: Option<f64>,
-    pub cvv_match: Option<bool>,
-    pub avs_result: Option<String>,
-    pub address_match: Option<bool>,
-    pub ip_is_vpn: Option<bool>,
-    pub card_present: Option<bool>,
-    pub entry_mode: Option<String>,
-    pub refund_status: Option<String>,
-}
+use crate::models::fraud::Transaction;
 
 pub fn score(tx: &Transaction) -> (u32, Vec<String>) {
     let mut score: u32 = 0;

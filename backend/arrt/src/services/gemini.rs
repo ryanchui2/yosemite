@@ -21,7 +21,10 @@ pub async fn explain_fraud(
     }
     LAST_CALL.store(now, Ordering::Relaxed);
 
-    let api_key = std::env::var("GEMINI_API_KEY").expect("GEMINI_API_KEY must be set");
+    let api_key = match std::env::var("GEMINI_API_KEY") {
+        Ok(key) => key,
+        Err(_) => return Err("GEMINI_API_KEY not set".into()),
+    };
     let client = Client::new();
 
     let rules_text = triggered_rules.join(", ");
@@ -47,6 +50,8 @@ pub async fn explain_fraud(
         .await?
         .json::<serde_json::Value>()
         .await?;
+
+    tracing::debug!("Gemini response: {}", resp);
 
     let text = resp["candidates"][0]["content"]["parts"][0]["text"]
         .as_str()

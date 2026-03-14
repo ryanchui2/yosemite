@@ -1,24 +1,9 @@
 use axum::{extract::State, Json};
 
 use crate::models::fraud::{FraudResult, ScanRequest, ScanResponse, Transaction};
-use crate::services::fraud_rules;
-use crate::services::gemini;
+use crate::services::{fraud_rules, gemini};
 use crate::state::AppState;
 
-fn to_fraud_rules_tx(tx: &Transaction) -> fraud_rules::Transaction {
-    fraud_rules::Transaction {
-        transaction_id: tx.transaction_id.clone(),
-        customer_name: tx.customer_name.clone(),
-        amount: tx.amount,
-        cvv_match: tx.cvv_match,
-        avs_result: tx.avs_result.clone(),
-        address_match: tx.address_match,
-        ip_is_vpn: tx.ip_is_vpn,
-        card_present: tx.card_present,
-        entry_mode: tx.entry_mode.clone(),
-        refund_status: tx.refund_status.clone(),
-    }
-}
 
 pub async fn scan(
     State(state): State<AppState>,
@@ -43,7 +28,7 @@ pub async fn scan(
     let mut results: Vec<FraudResult> = Vec::new();
 
     for tx in transactions {
-        let (risk_score, triggered_rules) = fraud_rules::score(&to_fraud_rules_tx(&tx));
+        let (risk_score, triggered_rules) = fraud_rules::score(&tx);
         if risk_score == 0 {
             continue;
         }
