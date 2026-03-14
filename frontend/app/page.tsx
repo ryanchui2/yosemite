@@ -218,8 +218,7 @@ export default function Dashboard() {
       {/* Header */}
       <header className="flex items-center justify-between px-2 mb-8">
         <div>
-          <h1 className="text-lg font-semibold text-gray-900 tracking-tight">ARRT</h1>
-          <p className="text-xs text-gray-500">Compliance Intelligence</p>
+          <h1 className="text-lg font-semibold text-gray-900 tracking-tight">yosemite</h1>
         </div>
         {(sanctionsData || anomaliesData || geoRiskData) && (
           <PDFExport sanctionsData={sanctionsData} anomaliesData={anomaliesData} geoRiskData={geoRiskData} />

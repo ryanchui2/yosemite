@@ -12,7 +12,7 @@ export function PDFExport({ sanctionsData, anomaliesData, geoRiskData }: Props) 
   function handleExport() {
     // Build plain-text report, then trigger browser print-to-PDF
     const lines: string[] = [
-      "ARRT — Compliance Report",
+      "yosemite — Compliance Report",
       `Generated: ${new Date().toLocaleString()}`,
       "",
     ];

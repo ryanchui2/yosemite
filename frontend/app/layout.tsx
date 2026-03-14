@@ -9,7 +9,7 @@ const defaultUrl = process.env.VERCEL_URL
 
 export const metadata: Metadata = {
   metadataBase: new URL(defaultUrl),
-  title: "ARRT",
+  title: "yosemite",
   description: "Sanctions screening, transaction anomaly detection, and geopolitical risk monitoring for small businesses.",
 };
 
