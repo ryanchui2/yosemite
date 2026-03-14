@@ -14,13 +14,15 @@ pub async fn report(
     Json(payload): Json<FraudReportRequest>,
 ) -> Json<FraudReportResponse> {
     let result = sqlx::query(
-        "INSERT INTO fraud_reports (transaction_id, confirmed_fraud, reported_by, notes)
-         VALUES ($1, $2, $3, $4)"
+        "INSERT INTO fraud_reports (transaction_id, confirmed_fraud, reported_by, notes, ai_reviewed, ai_review_notes)
+         VALUES ($1, $2, $3, $4, $5, $6)"
     )
     .bind(&payload.transaction_id)
     .bind(payload.confirmed_fraud)
     .bind(&payload.reported_by)
     .bind(&payload.notes)
+    .bind(payload.ai_reviewed.unwrap_or(false))
+    .bind(&payload.ai_review_notes)
     .execute(&state.db)
     .await;
 

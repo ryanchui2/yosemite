@@ -11,7 +11,7 @@ pub async fn explain_fraud(
     triggered_rules: &[String],
     transaction_id: &str,
     risk_score: u32,
-) -> Result<String, Box<dyn std::error::Error>> {
+) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     let client = Client::new();
     let rules_text = triggered_rules.join(", ");
     let prompt = build_prompt(transaction_id, risk_score, &rules_text);
@@ -52,7 +52,7 @@ pub async fn explain_fraud(
 
 pub async fn summarize_fraud_reports(
     report_context: &str,
-) -> Result<FraudReportSummaryContent, Box<dyn std::error::Error>> {
+) -> Result<FraudReportSummaryContent, Box<dyn std::error::Error + Send + Sync>> {
     let client = Client::new();
     let prompt = build_report_summary_prompt(report_context);
 

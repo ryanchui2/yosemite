@@ -32,7 +32,7 @@ pub async fn analyze_document(
     client: &Client,
     file_bytes: Vec<u8>,
     mime_type: &str,
-) -> Result<DocumentFraudResponse, Box<dyn std::error::Error>> {
+) -> Result<DocumentFraudResponse, Box<dyn std::error::Error + Send + Sync>> {
     let api_key = match std::env::var("GEMINI_API_KEY") {
         Ok(key) => key,
         Err(_) => return Err("GEMINI_API_KEY not set".into()),
