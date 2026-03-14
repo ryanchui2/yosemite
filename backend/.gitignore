@@ -13,9 +13,11 @@ target
 # Contains mutation testing data
 **/mutants.out*/
 
-# Environment variables
+# Environment variables — catch all .env files at any depth
 .env
-.env.local
+.env.*
+**/.env
+**/.env.*
 
 # RustRover
 #  JetBrains specific template is maintained in a separate JetBrains.gitignore that can

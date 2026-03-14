@@ -1,0 +1,5 @@
+# Environment variables — catch all .env files at any depth
+.env
+.env.*
+**/.env
+**/.env.*
