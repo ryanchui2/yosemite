@@ -52,6 +52,7 @@ async fn main() {
         .route("/health", get(health))
         .route("/api/transactions", get(routes::transactions::list))
         .route("/api/fraud/scan", post(routes::fraud::scan))
+        .route("/api/fraud/report", post(routes::fraud_report::report))
         .with_state(state)
         .layer(cors);
 

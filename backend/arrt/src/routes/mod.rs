@@ -1,2 +1,3 @@
 pub mod fraud;
+pub mod fraud_report;
 pub mod transactions;

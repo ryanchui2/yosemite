@@ -40,3 +40,18 @@ pub struct ScanResponse {
     pub flagged: usize,
     pub results: Vec<FraudResult>,
 }
+
+#[derive(Deserialize)]
+pub struct FraudReportRequest {
+    pub transaction_id: String,
+    pub confirmed_fraud: bool,
+    pub reported_by: Option<String>,
+    pub notes: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct FraudReportResponse {
+    pub success: bool,
+    pub transaction_id: String,
+    pub message: String,
+}
