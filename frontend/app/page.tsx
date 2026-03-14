@@ -1,12 +1,15 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect } from "react";
 import { ResultsTable } from "@/components/ResultsTable";
 import { PDFExport } from "@/components/PDFExport";
 import { CSVDataTable } from "@/components/CSVDataTable";
 import { Button } from "@/components/ui/button";
-import { scanSanctions, scanAnomalies, analyzeGeoRisk } from "@/lib/api";
-import type { SanctionsResponse, AnomaliesResponse, GeoRiskResponse } from "@/lib/api";
+import { ProtectionScore } from "@/components/ProtectionScore";
+import { FlaggedTransactions } from "@/components/FlaggedTransactions";
+import { RiskOverview } from "@/components/RiskOverview";
+import { scanSanctions, scanAnomalies, analyzeGeoRisk, scanFraud } from "@/lib/api";
+import type { SanctionsResponse, AnomaliesResponse, GeoRiskResponse, FraudScanResponse } from "@/lib/api";
 import { AlertTriangle, Globe, Shield, Upload } from "lucide-react";
 
 type Report = "anomalies" | "sanctions" | "georisk";
@@ -51,7 +54,7 @@ function DropZone({
         onDragLeave={() => setDragging(false)}
         onDrop={(e) => { e.preventDefault(); setDragging(false); const f = e.dataTransfer.files[0]; if (f) onFile(f); }}
         onClick={() => inputRef.current?.click()}
-        className={`rounded-2xl border-2 border-dashed px-4 py-5 text-center cursor-pointer transition-colors ${dragging ? "border-blue-400 bg-blue-50" : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
+        className={`rounded-3xl border-2 border-transparent px-4 py-6 text-center cursor-pointer transition-all duration-300 shadow-inner bg-background/50 ${dragging ? "ring-2 ring-primary/50 bg-primary/5" : "hover:bg-background/80"
           }`}
       >
         <input
@@ -93,6 +96,24 @@ export default function Dashboard() {
   const [sanctionsData, setSanctionsData] = useState<SanctionsResponse | null>(null);
   const [anomaliesData, setAnomaliesData] = useState<AnomaliesResponse | null>(null);
   const [geoRiskData, setGeoRiskData] = useState<GeoRiskResponse | null>(null);
+  const [fraudScanData, setFraudScanData] = useState<FraudScanResponse | null>(null);
+  const [fraudScanLoading, setFraudScanLoading] = useState(true);
+
+  // Auto-fetch fraud scan on mount for the fraud detection dashboard
+  useEffect(() => {
+    setFraudScanLoading(true);
+    scanFraud()
+      .then(setFraudScanData)
+      .catch(() => {})
+      .finally(() => setFraudScanLoading(false));
+  }, []);
+
+  // Derive protection score from scan data
+  const fraudResults = fraudScanData?.results ?? [];
+  const totalScanned = fraudScanData?.total_scanned ?? 0;
+  const protectionScore = totalScanned === 0
+    ? 100
+    : Math.round(Math.max(0, 100 - (fraudScanData!.flagged / totalScanned) * 100));
 
   const [sanctionsLoading, setSanctionsLoading] = useState(false);
   const [anomaliesLoading, setAnomaliesLoading] = useState(false);
@@ -172,9 +193,9 @@ export default function Dashboard() {
   ];
 
   return (
-    <div className="min-h-screen bg-gray-100 p-6 space-y-4">
+    <div className="min-h-screen bg-background p-6 space-y-6 font-sans">
       {/* Header */}
-      <header className="flex items-center justify-between px-1">
+      <header className="flex items-center justify-between px-2 mb-8">
         <div>
           <h1 className="text-lg font-semibold text-gray-900 tracking-tight">ARRT</h1>
           <p className="text-xs text-gray-500">Compliance Intelligence</p>
@@ -183,6 +204,43 @@ export default function Dashboard() {
           <PDFExport sanctionsData={sanctionsData} anomaliesData={anomaliesData} geoRiskData={geoRiskData} />
         )}
       </header>
+
+      {/* ── Fraud Detection Section ───────────────────────────── */}
+      <section>
+        <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-1 mb-3">
+          Fraud Detection
+        </h2>
+        <div className="grid grid-cols-3 gap-5">
+
+          {/* Box 1: Protection Score */}
+          <div className="bg-card rounded-[2rem] p-6 shadow-card-soft border border-white/50 aspect-square flex items-center justify-center">
+            {fraudScanLoading ? (
+              <p className="text-xs text-muted-foreground animate-pulse">Scanning…</p>
+            ) : (
+              <ProtectionScore score={protectionScore} />
+            )}
+          </div>
+
+          {/* Box 2: Flagged Transactions */}
+          <div className="bg-card rounded-[2rem] p-6 shadow-card-soft border border-white/50 aspect-square flex flex-col">
+            {fraudScanLoading ? (
+              <p className="text-xs text-muted-foreground animate-pulse">Loading…</p>
+            ) : (
+              <FlaggedTransactions results={fraudResults} />
+            )}
+          </div>
+
+          {/* Box 3: Risk Overview */}
+          <div className="bg-card rounded-[2rem] p-6 shadow-card-soft border border-white/50 aspect-square flex flex-col">
+            {fraudScanLoading ? (
+              <p className="text-xs text-muted-foreground animate-pulse">Analyzing…</p>
+            ) : (
+              <RiskOverview results={fraudResults} totalScanned={totalScanned} />
+            )}
+          </div>
+
+        </div>
+      </section>
 
       {error && (
         <div className="rounded-2xl p-3 bg-red-50 border border-red-200 text-sm text-red-700">
@@ -194,14 +252,14 @@ export default function Dashboard() {
       <div className="grid grid-cols-3 gap-4">
 
         {/* Card 1: Anomaly Detector */}
-        <div className="bg-white rounded-3xl p-5 shadow-sm space-y-4">
-          <div className="flex items-center gap-2">
-            <div className="h-8 w-8 rounded-xl bg-orange-100 flex items-center justify-center">
-              <AlertTriangle className="h-4 w-4 text-orange-500" />
+        <div className="bg-card rounded-[2rem] p-6 shadow-card-soft space-y-5 border border-white/50">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-2xl bg-orange-100 shadow-inner flex items-center justify-center">
+              <AlertTriangle className="h-5 w-5 text-orange-500 drop-shadow-sm" />
             </div>
             <div>
-              <p className="text-sm font-semibold text-gray-900">Anomaly Detector</p>
-              <p className="text-[11px] text-gray-400">Transaction CSV</p>
+              <p className="text-base font-bold text-foreground">Anomaly Detector</p>
+              <p className="text-xs text-muted-foreground">Transaction CSV</p>
             </div>
           </div>
 
@@ -228,14 +286,14 @@ export default function Dashboard() {
         </div>
 
         {/* Card 2: Sanctions Screener */}
-        <div className="bg-white rounded-3xl p-5 shadow-sm space-y-4">
-          <div className="flex items-center gap-2">
-            <div className="h-8 w-8 rounded-xl bg-blue-100 flex items-center justify-center">
-              <Shield className="h-4 w-4 text-blue-500" />
+        <div className="bg-card rounded-[2rem] p-6 shadow-card-soft space-y-5 border border-white/50">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-2xl bg-blue-100 shadow-inner flex items-center justify-center">
+              <Shield className="h-5 w-5 text-blue-500 drop-shadow-sm" />
             </div>
             <div>
-              <p className="text-sm font-semibold text-gray-900">Sanctions Screener</p>
-              <p className="text-[11px] text-gray-400">Entity CSV</p>
+              <p className="text-base font-bold text-foreground">Sanctions Screener</p>
+              <p className="text-xs text-muted-foreground">Entity CSV</p>
             </div>
           </div>
 
@@ -256,14 +314,14 @@ export default function Dashboard() {
         </div>
 
         {/* Card 3: Geopolitical Monitor */}
-        <div className="bg-white rounded-3xl p-5 shadow-sm space-y-4">
-          <div className="flex items-center gap-2">
-            <div className="h-8 w-8 rounded-xl bg-purple-100 flex items-center justify-center">
-              <Globe className="h-4 w-4 text-purple-500" />
+        <div className="bg-card rounded-[2rem] p-6 shadow-card-soft space-y-5 border border-white/50">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-2xl bg-purple-100 shadow-inner flex items-center justify-center">
+              <Globe className="h-5 w-5 text-purple-500 drop-shadow-sm" />
             </div>
             <div>
-              <p className="text-sm font-semibold text-gray-900">Geopolitical Monitor</p>
-              <p className="text-[11px] text-gray-400">Country risk</p>
+              <p className="text-base font-bold text-foreground">Geopolitical Monitor</p>
+              <p className="text-xs text-muted-foreground">Country risk</p>
             </div>
           </div>
 
@@ -272,7 +330,7 @@ export default function Dashboard() {
             onChange={(e) => setGeoCountries(e.target.value)}
             placeholder="Myanmar, Nigeria, Turkey"
             rows={3}
-            className="w-full rounded-2xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-700 placeholder:text-gray-400 resize-none focus:outline-none focus:ring-2 focus:ring-purple-400"
+            className="w-full rounded-2xl border-none bg-background/50 shadow-inner px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground resize-none focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
           />
 
           <Button
@@ -286,7 +344,7 @@ export default function Dashboard() {
       </div>
 
       {/* Row 2: Report card */}
-      <div className="bg-white rounded-3xl shadow-sm overflow-hidden">
+      <div className="bg-card rounded-[2rem] shadow-card-soft overflow-hidden border border-white/50 mt-8">
         {/* Report tab bar */}
         <div className="flex items-center gap-1 px-5 pt-4 border-b border-gray-100">
           {reportTabs.map((tab) => (
