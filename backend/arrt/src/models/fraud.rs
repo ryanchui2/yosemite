@@ -13,6 +13,8 @@ pub struct Transaction {
     pub card_present: Option<bool>,
     pub entry_mode: Option<String>,
     pub refund_status: Option<String>,
+    pub ip_country: Option<String>,
+    pub device_type: Option<String>,
 }
 
 #[derive(Deserialize)]

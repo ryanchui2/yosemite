@@ -4,6 +4,15 @@ pub fn score(tx: &Transaction) -> (u32, Vec<String>) {
     let mut score: u32 = 0;
     let mut rules: Vec<String> = Vec::new();
 
+    // --- Round Amount (structuring / laundering signal) ---
+    if let Some(amt) = tx.amount {
+    let cents = (amt * 100.0).round() as u64;
+    if cents % 100 == 0 && amt >= 1000.0 {
+        score += 15;
+        rules.push(format!("Suspiciously round amount: ${:.0}", amt));
+    }
+}
+
     // --- Identity / Card Verification ---
     if tx.cvv_match == Some(false) {
         score += 35;
@@ -56,6 +65,24 @@ pub fn score(tx: &Transaction) -> (u32, Vec<String>) {
         }
     }
 
+    // --- High-risk origin country (potential bias?) ---
+    const HIGH_RISK_COUNTRIES: &[&str] = &["NG", "RU", "CN", "KP", "IR", "VE"];
+    if let Some(ref country) = tx.ip_country {
+        if HIGH_RISK_COUNTRIES.contains(&country.to_uppercase().as_str()) {
+            score += 20;
+            rules.push(format!("Transaction from high-risk country: {}", country));
+        }
+    }
+
+    if tx.ip_is_vpn == Some(true) {
+    if let Some(ref device) = tx.device_type {
+        if device.to_lowercase().contains("mobile") {
+            score += 15;
+            rules.push("Mobile device with VPN active".to_string());
+        }
+    }
+}
+
     (score, rules)
 }
 
@@ -81,6 +108,7 @@ mod tests {
             avs_result: None,
             address_match: None,
             ip_is_vpn: None,
+            ip_country: None,
             card_present: None,
             entry_mode: None,
             refund_status: None,
