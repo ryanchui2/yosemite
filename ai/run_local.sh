@@ -8,10 +8,8 @@ if [ ! -d ".venv" ]; then
   python3 -m venv .venv
 fi
 
-source .venv/bin/activate
-
 echo "Installing dependencies..."
-pip install -r requirements.txt -q
+.venv/bin/python -m pip install -r requirements.txt -q
 
 echo "Starting FastAPI server at http://localhost:8000"
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
+.venv/bin/uvicorn main:app --reload --host 0.0.0.0 --port 8000
