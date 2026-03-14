@@ -1,7 +1,9 @@
-use axum::{routing::get, Router};
+use axum::{routing::{get, post}, Router};
 use std::net::SocketAddr;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
+mod models;
+mod routes;
 mod services;
 
 #[tokio::main]
@@ -17,7 +19,10 @@ async fn main() {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    let app = Router::new().route("/", get(root));
+    let app = Router::new()
+        .route("/", get(root))
+        .route("/api/fraud/scan", post(routes::fraud::scan));
+        // TODO (Backend 1): add .with_state(state) and GET /api/transactions here
 
     let port: u16 = std::env::var("PORT")
         .unwrap_or_else(|_| "3001".to_string())
