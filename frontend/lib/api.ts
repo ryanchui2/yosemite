@@ -10,6 +10,7 @@ export interface FraudResult {
   risk_level: "HIGH" | "MEDIUM" | "LOW";
   triggered_rules: string[];
   ai_explanation: string | null;
+  anomaly_score: number | null;
 }
 
 export interface FraudScanResponse {
@@ -118,7 +119,31 @@ export async function scanSanctions(file: File): Promise<SanctionsResponse> {
 }
 
 export async function scanAnomalies(file: File): Promise<AnomaliesResponse> {
-  return { scan_id: "stub", total_transactions: 0, flagged: 0, results: [] };
+  const res = await fetch(`${BACKEND_URL}/api/fraud/scan`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({}),
+  });
+  if (!res.ok) throw new Error(`Anomaly scan failed: ${res.status}`);
+  const fraud: FraudScanResponse = await res.json();
+
+  const results: AnomalyResult[] = fraud.results.map((r, i) => ({
+    row_index: i,
+    date: new Date().toISOString().split("T")[0],
+    vendor: r.customer_name ?? r.transaction_id,
+    amount: r.amount ?? 0,
+    anomaly_score: r.anomaly_score ?? r.risk_score / 100,
+    risk_level: r.risk_level,
+    reasons: r.triggered_rules,
+    ai_explanation: r.ai_explanation ?? "",
+  }));
+
+  return {
+    scan_id: crypto.randomUUID(),
+    total_transactions: fraud.total_scanned,
+    flagged: fraud.flagged,
+    results,
+  };
 }
 
 export async function analyzeGeoRisk(countries: string[]): Promise<GeoRiskResponse> {
