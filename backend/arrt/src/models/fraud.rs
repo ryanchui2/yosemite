@@ -25,6 +25,10 @@ pub struct ScoringTx {
 pub struct TransactionInput {
     pub transaction_id: String,
     pub customer_name: Option<String>,
+    #[serde(alias = "customer_id")]
+    pub customer_id: Option<String>,
+    #[serde(alias = "order_id")]
+    pub order_id: Option<String>,
     pub amount: Option<f64>,
     pub timestamp: Option<String>,
     pub cvv_match: Option<bool>,

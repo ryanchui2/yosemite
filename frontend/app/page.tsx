@@ -17,6 +17,7 @@ import {
   fetchFraudReportSummary,
   fetchTransactions,
   agentScan,
+  seedDemoTransactions,
   saveCsvData,
   fetchSavedCsvList,
   saveEntityList,
@@ -204,6 +205,8 @@ export default function Dashboard() {
   const [agentScanReport, setAgentScanReport] = useState<AgentScanReport | null>(null);
   const [agentScanLoading, setAgentScanLoading] = useState(false);
   const [agentScanDocument, setAgentScanDocument] = useState<File | null>(null);
+  const [seedDemoLoading, setSeedDemoLoading] = useState(false);
+  const [seedDemoMessage, setSeedDemoMessage] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -280,7 +283,7 @@ export default function Dashboard() {
     setError(null);
     setAgentScanReport(null);
     try {
-      const transactions = await fetchTransactions();
+      const transactions = await fetchTransactions({ limit: 500 });
       if (transactions.length === 0) {
         setError("No transactions in the database. Add transactions first.");
         return;
@@ -1107,8 +1110,34 @@ export default function Dashboard() {
                   Full AI fraud analysis
                 </p>
                 <p className="text-sm text-foreground/80">
-                  Run the multi-agent pipeline (anomaly detection, Benford&apos;s Law, duplicate detection, graph analysis) on all transactions in the database.
+                  Run the full AI fraud analysis pipeline: anomaly detection, Benford&apos;s Law, duplicate detection, graph analysis, and behavioral velocity on all transactions in the database. Use &quot;Load demo transactions&quot; first to seed the DB from <code className="text-xs bg-muted px-1 rounded">scripts/demo/transactions_agent_scan_demo.csv</code> so velocity, graph, sequence, and GNN have proper data.
                 </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="font-mono text-xs"
+                    disabled={seedDemoLoading}
+                    onClick={async () => {
+                      setSeedDemoLoading(true);
+                      setSeedDemoMessage(null);
+                      setError(null);
+                      try {
+                        const r = await seedDemoTransactions();
+                        setSeedDemoMessage(`Loaded ${r.loaded} demo transactions. You can run the analysis now.`);
+                      } catch (e) {
+                        setError(e instanceof Error ? e.message : "Seed demo failed.");
+                        setSeedDemoMessage(null);
+                      } finally {
+                        setSeedDemoLoading(false);
+                      }
+                    }}
+                  >
+                    {seedDemoLoading ? "Loading…" : "Load demo transactions"}
+                  </Button>
+                  {seedDemoMessage && <span className="text-xs text-muted-foreground">{seedDemoMessage}</span>}
+                </div>
                 <div className="space-y-2">
                   <label className="text-xs font-medium text-muted-foreground">
                     Optional: attach a document (PDF/image) for VLM fraud analysis
@@ -1149,6 +1178,11 @@ export default function Dashboard() {
                         <p className="text-[10px] font-medium text-muted-foreground tracking-[0.2em] uppercase">
                           Report
                         </p>
+                        {agentScanReport.duration_ms != null && (
+                          <p className="text-xs text-muted-foreground">
+                            Analysis completed in {agentScanReport.duration_ms.toLocaleString()} ms
+                          </p>
+                        )}
                         <p className="font-medium capitalize text-foreground">
                           Risk level: {agentScanReport.risk_level}
                         </p>
@@ -1178,6 +1212,21 @@ export default function Dashboard() {
                               Document (VLM): {agentScanReport.document_risk_level}
                             </span>
                           )}
+                          {agentScanReport.velocity_flagged_ids && agentScanReport.velocity_flagged_ids.length > 0 && (
+                            <span className="border border-amber-500/50 px-2 py-1 text-amber-700 dark:text-amber-400">
+                              Velocity: {agentScanReport.velocity_flagged_ids.length} flagged
+                            </span>
+                          )}
+                          {agentScanReport.gnn_flagged_ids && agentScanReport.gnn_flagged_ids.length > 0 && (
+                            <span className="border border-amber-500/50 px-2 py-1 text-amber-700 dark:text-amber-400">
+                              GNN: {agentScanReport.gnn_flagged_ids.length} flagged
+                            </span>
+                          )}
+                          {agentScanReport.sequence_flagged_ids && agentScanReport.sequence_flagged_ids.length > 0 && (
+                            <span className="border border-amber-500/50 px-2 py-1 text-amber-700 dark:text-amber-400">
+                              Sequence: {agentScanReport.sequence_flagged_ids.length} flagged
+                            </span>
+                          )}
                         </div>
                         {agentScanReport.graph_summary && (
                           <p className="text-xs text-muted-foreground">{agentScanReport.graph_summary}</p>
@@ -1185,6 +1234,31 @@ export default function Dashboard() {
                         {agentScanReport.document_summary && (
                           <p className="text-xs text-muted-foreground">{agentScanReport.document_summary}</p>
                         )}
+                        {agentScanReport.velocity_summary && (
+                          <p className="text-xs text-muted-foreground">{agentScanReport.velocity_summary}</p>
+                        )}
+                        {agentScanReport.gnn_summary && (
+                          <p className="text-xs text-muted-foreground">{agentScanReport.gnn_summary}</p>
+                        )}
+                        {agentScanReport.sequence_summary && (
+                          <p className="text-xs text-muted-foreground">{agentScanReport.sequence_summary}</p>
+                        )}
+                        {[
+                          agentScanReport.velocity_summary,
+                          agentScanReport.gnn_summary,
+                          agentScanReport.sequence_summary,
+                        ].some(
+                          (s) =>
+                            s &&
+                            (s.includes("Insufficient") ||
+                              s.includes("no edges") ||
+                              s.includes("need at least 2") ||
+                              s.includes("graph too small")),
+                        ) && (
+                            <p className="text-xs text-muted-foreground mt-2 border-t border-border pt-2">
+                              <strong>Why some agents didn&apos;t flag:</strong> Velocity and Sequence need timestamps and multiple transactions per customer; Graph/GNN need transactions that share customer_id or order_id so the graph has edges. If your data has unique customers per row or missing timestamps, those agents report &quot;insufficient data&quot; instead of scores. Seed demo data (see migrations) or use a CSV with timestamp, customer_id, and order_id for full pipeline coverage.
+                            </p>
+                          )}
                         {agentScanReport.review_notes && (
                           <p className="text-xs border-l-2 border-amber-500/50 pl-2 text-foreground/80 italic">
                             Review: {agentScanReport.review_notes}

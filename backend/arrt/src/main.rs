@@ -80,6 +80,7 @@ async fn main() {
         .route("/api/fraud/document", post(routes::document::analyze))
         .route("/api/fraud/georisk", post(routes::georisk::analyze))
         .route("/api/fraud/pipeline", post(routes::pipeline::ingest))
+        .route("/api/fraud/seed-demo", post(routes::pipeline::seed_demo))
         .route("/api/fraud/agent-scan", post(routes::agent_scan::scan))
         .route("/api/risk/business", post(routes::risk::business_risk))
         .route("/api/chat", post(routes::chat::respond))

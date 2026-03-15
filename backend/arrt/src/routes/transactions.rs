@@ -16,7 +16,7 @@ pub async fn list(
     State(state): State<AppState>,
     Query(params): Query<TransactionQuery>,
 ) -> Json<Vec<Transaction>> {
-    let limit = params.limit.unwrap_or(50).min(200);
+    let limit = params.limit.unwrap_or(50).min(500);
     let offset = params.offset.unwrap_or(0);
 
     let rows = if let Some(cid) = &params.customer_id {

@@ -4,6 +4,10 @@
 
 ARRT is a fraud detection and compliance intelligence platform for small businesses. Built for real-time detection of fraudulent transactions and financial anomalies, it combines rule-based scoring, machine learning anomaly detection, and **Railtracks** multi-agent AI (anomaly detection, Benford's Law, duplicate detection) to surface invoice fraud, sanctions exposure, and geopolitical risk. Uses Railtracks for multi-agent fraud analysis.
 
+## TD Best AI Hack — Real-Time Financial Fraud Detection
+
+ARRT is built for the **TD Best AI Hack** track: real-time detection of fraudulent transactions, suspicious patterns, and financial anomalies. The **AI fraud analysis** pipeline is the **Railtracks**-driven pipeline: multiple signals (Isolation Forest, Benford's Law, duplicate detection, graph analysis, behavioral velocity, document/VLM) are orchestrated into a single structured report with risk level, summary, and recommendations. One click → full analysis; latency is exposed as `duration_ms` for speed transparency.
+
 ## Architecture
 
 ```
@@ -14,13 +18,18 @@ ai/              Python (FastAPI) ML sidecar + Railtracks agent pipelines
 
 ## Features
 
-- **Transaction Fraud Scoring** — weighted rule engine + Isolation Forest anomaly detection
-- **Benford's Law Analysis** — chi-squared test to detect manipulated amount distributions
-- **Duplicate Invoice Detection** — catches repeated order IDs and same customer/amount/date charges
-- **Document Fraud** — Gemini Vision analysis of uploaded invoices and PDFs
-- **Railtracks Agent Pipelines** — single-agent (`fraud_analyst`) and multi-agent (`fraud_coordinator`) pipelines that orchestrate all three fraud signals and return a structured `FraudReport`
+- **AI fraud analysis** — one pipeline that runs and combines:
+  - **Transaction fraud scoring** — rule engine + Isolation Forest anomaly detection
+  - **Benford's Law** — chi-squared test for manipulated amount distributions
+  - **Duplicate invoice detection** — repeated order IDs and same customer/amount/date charges
+  - **Graph analysis** — transaction graph heuristics (rings, bursty clusters)
+  - **Behavioral velocity** — 24h vs 30d activity spikes per entity
+  - **Document fraud** — Gemini Vision on uploaded invoices/PDFs
+  - **Railtracks orchestration** — single-agent (`fraud_analyst`) and multi-agent (`fraud_coordinator`) fuse all signals into a structured `FraudReport` (risk level, summary, recommendations, `duration_ms`)
 - **Sanctions Screening** — entity matching against the OpenSanctions dataset
 - **Geopolitical Risk** — country-level risk briefings via LLM
+
+**Docs:** [AI fraud analysis — models](docs/FRAUD_MODELS.md) (all signals: anomaly, Benford, duplicate, graph, velocity, document) · [Datasets](docs/DATASETS.md) (demo data and public synthetic fraud datasets)
 
 ## Stack
 

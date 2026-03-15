@@ -3,6 +3,7 @@ use axum::{
     http::StatusCode,
     Json,
 };
+use std::path::Path;
 
 use crate::auth::middleware::AuthUser;
 
@@ -19,6 +20,35 @@ const FRAUD_THRESHOLD: u32 = 70;
 // ── Allowed MIME types ────────────────────────────────────────────────────────
 const PDF_TYPES: &[&str] = &["application/pdf", "image/jpeg", "image/png", "image/webp"];
 const CSV_TYPE: &str = "text/csv";
+
+/// POST /api/fraud/seed-demo
+///
+/// Loads transactions from scripts/demo/transactions_agent_scan_demo.csv into the DB
+/// so the agent pipeline (velocity, graph, sequence, GNN) has proper demo data.
+#[axum::debug_handler]
+pub async fn seed_demo(
+    AuthUser(_): AuthUser,
+    State(state): State<AppState>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".into());
+    let path = Path::new(&manifest_dir)
+        .join("../..")
+        .join("scripts/demo/transactions_agent_scan_demo.csv");
+    let path = path
+        .canonicalize()
+        .map_err(|e| (StatusCode::NOT_FOUND, format!("Demo CSV not found: {}. Run from repo root or set CARGO_MANIFEST_DIR. {}", path.display(), e)))?;
+    let bytes = std::fs::read(&path).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to read demo CSV: {}", e)))?;
+    let transactions = parse_csv(&bytes).map_err(|e| (StatusCode::UNPROCESSABLE_ENTITY, format!("Demo CSV parse error: {}", e)))?;
+    // Clear existing transactions so the DB only has demo data (and agent scan gets the right set).
+    sqlx::query("TRUNCATE TABLE transactions CASCADE")
+        .execute(&state.db)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to clear transactions: {}", e)))?;
+    for tx in &transactions {
+        save_transaction(&state.db, tx).await;
+    }
+    Ok(Json(serde_json::json!({ "loaded": transactions.len(), "path": path.to_string_lossy() })))
+}
 
 /// POST /api/fraud/pipeline
 ///
@@ -269,6 +299,8 @@ fn parse_csv(bytes: &[u8]) -> Result<Vec<TransactionInput>, Box<dyn std::error::
         rows.push(TransactionInput {
             transaction_id,
             customer_name: get("customer_name"),
+            customer_id: get("customer_id"),
+            order_id: get("order_id"),
             amount: get("amount").and_then(|v| v.parse::<f64>().ok()),
             timestamp: get("timestamp"),
             cvv_match: parse_bool("cvv_match"),
@@ -331,14 +363,16 @@ async fn save_fraud_report(
 async fn save_transaction(db: &sqlx::PgPool, tx: &TransactionInput) {
     let result = sqlx::query(
         "INSERT INTO transactions (
-            transaction_id, customer_name, amount, timestamp,
+            transaction_id, customer_name, customer_id, order_id, amount, timestamp,
             cvv_match, avs_result, address_match,
             ip_is_vpn, ip_country, device_type,
             card_present, entry_mode, refund_status
          )
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
          ON CONFLICT (transaction_id) DO UPDATE SET
             customer_name = EXCLUDED.customer_name,
+            customer_id = EXCLUDED.customer_id,
+            order_id = EXCLUDED.order_id,
             amount = EXCLUDED.amount,
             timestamp = EXCLUDED.timestamp,
             cvv_match = EXCLUDED.cvv_match,
@@ -353,6 +387,8 @@ async fn save_transaction(db: &sqlx::PgPool, tx: &TransactionInput) {
     )
     .bind(&tx.transaction_id)
     .bind(&tx.customer_name)
+    .bind(&tx.customer_id)
+    .bind(&tx.order_id)
     .bind(tx.amount)
     .bind(&tx.timestamp)
     .bind(tx.cvv_match)

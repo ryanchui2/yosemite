@@ -75,6 +75,20 @@ export interface AgentScanReport {
   document_summary?: string | null;
   /** Optional second-pass review notes from the reviewer agent. */
   review_notes?: string | null;
+  /** Scan duration in milliseconds (real-time latency). */
+  duration_ms?: number;
+  /** Transaction IDs flagged by behavioral velocity (24h spike vs 30d baseline). */
+  velocity_flagged_ids?: string[];
+  /** One-line summary from velocity analysis. */
+  velocity_summary?: string | null;
+  /** Transaction IDs flagged by GNN (2-layer GCN) on transaction graph. */
+  gnn_flagged_ids?: string[];
+  /** One-line summary from GNN analysis. */
+  gnn_summary?: string | null;
+  /** Transaction IDs flagged by BiLSTM sequence (temporal) analysis. */
+  sequence_flagged_ids?: string[];
+  /** One-line summary from sequence analysis. */
+  sequence_summary?: string | null;
 }
 
 export interface Transaction {
@@ -175,10 +189,24 @@ export async function agentScan(
   return res.json();
 }
 
-/** Fetch all transactions from the database */
-export async function fetchTransactions(): Promise<Transaction[]> {
-  const res = await apiFetch(`${BACKEND_URL}/api/transactions`);
+/** Fetch all transactions from the database (optionally with limit for agent scan to get full set). */
+export async function fetchTransactions(options?: { limit?: number }): Promise<Transaction[]> {
+  const params = options?.limit != null ? `?limit=${Math.min(options.limit, 500)}` : "";
+  const res = await apiFetch(`${BACKEND_URL}/api/transactions${params}`);
   if (!res.ok) throw new Error(`Failed to fetch transactions: ${res.status}`);
+  return res.json();
+}
+
+/** Load demo transactions from scripts/demo/transactions_agent_scan_demo.csv into the DB. */
+export async function seedDemoTransactions(): Promise<{ loaded: number; path?: string }> {
+  const res = await apiFetch(`${BACKEND_URL}/api/fraud/seed-demo`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error((err as { detail?: string }).detail ?? `Seed demo failed: ${res.status}`);
+  }
   return res.json();
 }
 

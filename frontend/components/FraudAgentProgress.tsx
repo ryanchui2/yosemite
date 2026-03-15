@@ -9,8 +9,11 @@ import {
   FileSearch,
   GitBranch,
   Layers,
+  ListOrdered,
+  Network,
   ScanSearch,
   ShieldCheck,
+  TrendingUp,
 } from "lucide-react";
 
 export type AgentStatus = "pending" | "running" | "done";
@@ -29,6 +32,9 @@ const AGENTS: AgentStep[] = [
   { id: "duplicate", name: "DuplicateAgent", description: "Duplicate invoice detection", icon: <Copy className="h-3.5 w-3.5" /> },
   { id: "document", name: "DocumentAgent", description: "VLM document fraud analysis", icon: <FileSearch className="h-3.5 w-3.5" /> },
   { id: "graph", name: "GraphAgent", description: "Graph-based fraud heuristics", icon: <GitBranch className="h-3.5 w-3.5" /> },
+  { id: "velocity", name: "VelocityAgent", description: "Behavioral velocity (24h vs 30d)", icon: <TrendingUp className="h-3.5 w-3.5" /> },
+  { id: "gnn", name: "GnnAgent", description: "2-layer GCN (GNN) graph risk", icon: <Network className="h-3.5 w-3.5" /> },
+  { id: "sequence", name: "SequenceAgent", description: "BiLSTM temporal/sequence", icon: <ListOrdered className="h-3.5 w-3.5" /> },
   { id: "reviewer", name: "FraudReviewer", description: "Second-pass review notes", icon: <ShieldCheck className="h-3.5 w-3.5" /> },
 ];
 
@@ -48,6 +54,18 @@ function getAgentOutcome(id: string, report: AgentScanReport): string | null {
       return report.document_risk_level ?? "No document";
     case "graph": {
       const n = report.graph_flagged_ids?.length ?? 0;
+      return n > 0 ? `${n} flagged` : "0 flagged";
+    }
+    case "velocity": {
+      const n = report.velocity_flagged_ids?.length ?? 0;
+      return n > 0 ? `${n} flagged` : "0 flagged";
+    }
+    case "gnn": {
+      const n = report.gnn_flagged_ids?.length ?? 0;
+      return n > 0 ? `${n} flagged` : "0 flagged";
+    }
+    case "sequence": {
+      const n = report.sequence_flagged_ids?.length ?? 0;
       return n > 0 ? `${n} flagged` : "0 flagged";
     }
     case "reviewer":
@@ -70,6 +88,12 @@ function getAgentOutcomeHint(id: string, report: AgentScanReport): string | null
       if (report.graph_summary?.toLowerCase().includes("networkx not installed"))
         return "Install networkx in the AI environment: pip install networkx (see ai/requirements.txt).";
       return report.graph_summary ?? null;
+    case "velocity":
+      return report.velocity_summary ?? null;
+    case "gnn":
+      return report.gnn_summary ?? null;
+    case "sequence":
+      return report.sequence_summary ?? null;
     case "reviewer":
       return report.review_notes
         ? null

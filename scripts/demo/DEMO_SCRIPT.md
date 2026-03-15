@@ -5,7 +5,7 @@
 - Python ML sidecar running on localhost:8000
 - Frontend running on localhost:3000
 - Migration 0005 applied (GlobalTex seed data in DB)
-- `vendor_sanctions_demo.csv` and `transactions_demo.csv` ready to upload
+- `vendor_sanctions_demo.csv`, `transactions_demo.csv`, and `transactions_agent_scan_demo.csv` ready to upload
 
 ---
 
@@ -48,6 +48,18 @@ Point to the Benford's Law card if visible.
 > "We also run Benford's Law — a mathematical test used by forensic accountants.
 > The digit distribution of these amounts is statistically inconsistent with legitimate
 > business transactions."
+
+---
+
+## Step 2b — AI fraud analysis (Railtracks) (45 sec)
+
+In the dashboard, open the **AI fraud analysis** tab. Use the transaction list from the anomaly step, or upload / select from `transactions_agent_scan_demo.csv` (has timestamps for velocity, duplicates, and variety for Benford). Click **Run full AI fraud analysis**.
+
+> "This is the full AI fraud analysis pipeline: one click runs every signal — anomaly, Benford, duplicates, graph, and behavioral velocity — and Railtracks returns a single structured report."
+
+Point to the **Report** card: risk level, summary, and **Analysis completed in X ms** (real-time latency).
+
+> "We get a risk level, a plain-English summary, and how long it took. If velocity or duplicates are flagged, you'll see them here. This is real-time fraud detection with multiple models orchestrated by Railtracks."
 
 ---
 

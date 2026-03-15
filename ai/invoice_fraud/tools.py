@@ -89,6 +89,60 @@ def run_graph_analysis(transactions: list) -> dict:
     return resp.json()
 
 
+@rt.function_node
+def run_velocity_analysis(transactions: list) -> dict:
+    """Run behavioral velocity analysis on a batch of transactions.
+
+    Flags entities (e.g. customer_id) whose 24h activity (count or sum) is ≥3x
+    their 30d baseline. Detects sudden spikes that may indicate compromised
+    accounts or fraud bursts. Requires timestamps on transactions.
+
+    Args:
+        transactions (list): List of transaction dicts with transaction_id,
+            customer_id (or customer_name), amount, and timestamp fields.
+    """
+    url = f"{_ai_base_url()}/velocity"
+    resp = httpx.post(url, json={"transactions": transactions}, timeout=30.0)
+    resp.raise_for_status()
+    return resp.json()
+
+
+@rt.function_node
+def run_gnn_analysis(transactions: list) -> dict:
+    """Run 2-layer GCN (GNN) on the transaction graph.
+
+    Builds the same graph as graph analysis (customer/order/amount-date edges),
+    runs a small Graph Convolutional Network, returns transaction IDs with
+    highest learned risk scores.
+
+    Args:
+        transactions (list): List of transaction dicts with transaction_id,
+            customer_id, order_id, amount, and timestamp fields.
+    """
+    url = f"{_ai_base_url()}/gnn"
+    resp = httpx.post(url, json={"transactions": transactions}, timeout=60.0)
+    resp.raise_for_status()
+    return resp.json()
+
+
+@rt.function_node
+def run_sequence_analysis(transactions: list) -> dict:
+    """Run BiLSTM sequence (temporal) analysis per entity.
+
+    Builds per-customer_id transaction sequences (sorted by time), runs a
+    small BiLSTM to score temporal patterns, returns flagged entity and
+    transaction IDs.
+
+    Args:
+        transactions (list): List of transaction dicts with transaction_id,
+            customer_id, amount, and timestamp fields.
+    """
+    url = f"{_ai_base_url()}/sequence"
+    resp = httpx.post(url, json={"transactions": transactions}, timeout=60.0)
+    resp.raise_for_status()
+    return resp.json()
+
+
 def _run_document_analysis_impl(document_base64: str, mime_type: str) -> dict:
     from .document_tool import analyze_document_vlm
     return analyze_document_vlm(document_base64, mime_type)

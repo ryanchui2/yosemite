@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "arrt-ai"
+version = "0.1.0"
+description = "ARRT AI sidecar: fraud detection, Railtracks agent pipelines, ML models"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "scikit-learn",
+    "pandas",
+    "gunicorn",
+    "railtracks",
+    "railtracks-cli",
+    "python-dotenv",
+    "httpx",
+    "networkx",
+    "torch",
+]
+
+[project.optional-dependencies]
+dev = []
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["*"]

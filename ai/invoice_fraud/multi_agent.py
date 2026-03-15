@@ -17,6 +17,9 @@ from .tools import (
     run_duplicate_detection,
     run_document_analysis,
     run_graph_analysis,
+    run_velocity_analysis,
+    run_gnn_analysis,
+    run_sequence_analysis,
 )
 
 
@@ -166,22 +169,101 @@ graph_agent = rt.agent_node(
     ),
 )
 
+velocity_agent = rt.agent_node(
+    name="VelocityAgent",
+    tool_nodes=[run_velocity_analysis],
+    llm=make_llm_specialist(),
+    system_message=(
+        "You are a behavioral velocity fraud analyst. When given a list of transactions "
+        "with timestamps, call run_velocity_analysis with the full list. Return the raw "
+        "JSON result plus a one-sentence interpretation of which entities had 24h activity "
+        "spikes vs their 30d baseline (e.g. flagged_entity_ids, flagged_transaction_ids)."
+    ),
+    manifest=rt.ToolManifest(
+        description=(
+            "Runs behavioral velocity analysis: flags entities (e.g. customer_id) whose "
+            "24h activity (count or sum) is ≥3x their 30d baseline. Requires timestamps."
+        ),
+        parameters=[
+            rt.llm.Parameter(
+                name="transactions",
+                param_type="string",
+                description=(
+                    "JSON string of the full transaction batch with transaction_id, "
+                    "customer_id, amount, and timestamp fields."
+                ),
+            )
+        ],
+    ),
+)
+
+gnn_agent = rt.agent_node(
+    name="GnnAgent",
+    tool_nodes=[run_gnn_analysis],
+    llm=make_llm_specialist(),
+    system_message=(
+        "You are a graph neural network (GNN) fraud analyst. When given a list of transactions, "
+        "call run_gnn_analysis with the full list. Return the raw JSON result plus a one-sentence "
+        "interpretation of which transaction IDs were flagged by the 2-layer GCN (graph risk scores)."
+    ),
+    manifest=rt.ToolManifest(
+        description=(
+            "Runs 2-layer GCN on the transaction graph; returns transaction IDs with highest "
+            "learned risk (graph structure + node features)."
+        ),
+        parameters=[
+            rt.llm.Parameter(
+                name="transactions",
+                param_type="string",
+                description="JSON string of the full transaction batch with transaction_id, customer_id, order_id, amount, timestamp.",
+            )
+        ],
+    ),
+)
+
+sequence_agent = rt.agent_node(
+    name="SequenceAgent",
+    tool_nodes=[run_sequence_analysis],
+    llm=make_llm_specialist(),
+    system_message=(
+        "You are a temporal/sequence fraud analyst. When given a list of transactions with timestamps, "
+        "call run_sequence_analysis with the full list. Return the raw JSON result plus a one-sentence "
+        "interpretation of which entities or transactions were flagged by BiLSTM sequence analysis."
+    ),
+    manifest=rt.ToolManifest(
+        description=(
+            "Runs BiLSTM sequence analysis per entity (customer_id); flags entities with "
+            "suspicious temporal transaction patterns. Requires timestamps."
+        ),
+        parameters=[
+            rt.llm.Parameter(
+                name="transactions",
+                param_type="string",
+                description="JSON string of the full transaction batch with transaction_id, customer_id, amount, timestamp.",
+            )
+        ],
+    ),
+)
+
 
 # ── Coordinator ───────────────────────────────────────────────────────────────
 
 fraud_coordinator = rt.agent_node(
     name="FraudCoordinator",
-    tool_nodes=[anomaly_agent, benford_agent, duplicate_agent, document_agent, graph_agent],
+    tool_nodes=[anomaly_agent, benford_agent, duplicate_agent, document_agent, graph_agent, velocity_agent, gnn_agent, sequence_agent],
     llm=make_llm_coordinator(),
     output_schema=FraudReport,
     system_message=(
         "You are a fraud investigation coordinator. You will receive a batch of "
         "financial transactions and must orchestrate specialist agents to produce a complete FraudReport.\n\n"
-        "Always call these four agents with the full transaction JSON:\n"
+        "Always call these agents with the full transaction JSON:\n"
         "1. AnomalyAgent — score for outliers.\n"
         "2. BenfordAgent — check digit distribution.\n"
         "3. DuplicateAgent — find duplicate invoices.\n"
-        "4. GraphAgent — run graph-based fraud heuristics.\n\n"
+        "4. GraphAgent — run graph-based fraud heuristics.\n"
+        "5. VelocityAgent — run behavioral velocity (24h vs 30d baseline); use if transactions have timestamps.\n"
+        "6. GnnAgent — run 2-layer GCN on the transaction graph for learned graph risk.\n"
+        "7. SequenceAgent — run BiLSTM sequence (temporal) analysis per entity; use if transactions have timestamps.\n\n"
         "If the user message includes document_base64 and mime_type (e.g. for an uploaded document), "
         "also call DocumentAgent with those two arguments to get vision-based document fraud signals.\n\n"
         "Once all relevant specialists have responded, synthesize their findings:\n"
@@ -194,6 +276,12 @@ fraud_coordinator = rt.agent_node(
         "- duplicate_groups_count: total_duplicate_groups from DuplicateAgent.\n"
         "- graph_flagged_ids: flagged_transaction_ids from GraphAgent.\n"
         "- graph_summary: summary from GraphAgent (one line).\n"
+        "- velocity_flagged_ids: flagged_transaction_ids from VelocityAgent (if called).\n"
+        "- velocity_summary: summary from VelocityAgent (one line).\n"
+        "- gnn_flagged_ids: flagged_transaction_ids from GnnAgent (if called).\n"
+        "- gnn_summary: summary from GnnAgent (one line).\n"
+        "- sequence_flagged_ids: flagged_transaction_ids from SequenceAgent (if called).\n"
+        "- sequence_summary: summary from SequenceAgent (one line).\n"
         "- document_risk_level, document_signals, document_summary: from DocumentAgent when you called it.\n"
         "- recommendations: specific, actionable next steps."
     ),

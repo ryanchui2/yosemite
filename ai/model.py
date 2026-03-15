@@ -134,3 +134,111 @@ def find_duplicates(transactions: list[dict]) -> dict:
         "total_duplicate_groups": len(duplicate_groups),
         "duplicate_groups": duplicate_groups,
     }
+
+
+# ── Behavioral velocity (novel signal for TD hack) ───────────────────────────────
+
+def _parse_ts(ts: str | None) -> float | None:
+    """Parse timestamp to Unix seconds; supports ISO-like and numeric."""
+    if ts is None or ts == "":
+        return None
+    try:
+        if isinstance(ts, (int, float)):
+            return float(ts) if ts > 1e10 else ts * 1000  # assume ms if large
+        from datetime import datetime
+        s = str(ts).strip()
+        if s.isdigit():
+            t = float(s)
+            return t if t > 1e10 else t * 1000
+        for fmt in ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+            try:
+                return datetime.strptime(s[:19], fmt).timestamp()
+            except ValueError:
+                continue
+        return None
+    except Exception:
+        return None
+
+
+def velocity_analysis(transactions: list[dict], *, ratio_threshold: float = 3.0) -> dict:
+    """
+    Behavioral velocity: flag entities (customer_id) with unusually high activity
+    in the last 24h vs trailing 30d baseline. Uses only the current batch; timestamps
+    must be present. Returns flagged_entity_ids, flagged_transaction_ids, summary.
+    """
+    if not transactions:
+        return {
+            "sufficient_data": False,
+            "flagged_entity_ids": [],
+            "flagged_transaction_ids": [],
+            "summary": "No transactions for velocity analysis.",
+        }
+    # Build list with parsed timestamps
+    rows = []
+    for t in transactions:
+        ts = _parse_ts(t.get("timestamp"))
+        if ts is None:
+            continue
+        entity = t.get("customer_id") or t.get("customer_name") or "unknown"
+        rows.append({
+            "transaction_id": t.get("transaction_id"),
+            "entity": str(entity),
+            "amount": float(t["amount"]) if t.get("amount") is not None else 0.0,
+            "ts": ts,
+        })
+    if len(rows) < 2:
+        return {
+            "sufficient_data": False,
+            "flagged_entity_ids": [],
+            "flagged_transaction_ids": [],
+            "summary": "Insufficient transactions with timestamps for velocity analysis.",
+        }
+    now = max(r["ts"] for r in rows)
+    day_sec = 86400
+    window_24h = now - day_sec
+    window_30d = now - (30 * day_sec)
+    # Aggregate per entity: count and sum in 24h and in 30d
+    by_entity: dict[str, list] = defaultdict(list)
+    for r in rows:
+        by_entity[r["entity"]].append(r)
+    flagged_entities = []
+    flagged_txn_ids = []
+    details = []
+    for entity, ent_rows in by_entity.items():
+        in_24h = [r for r in ent_rows if r["ts"] > window_24h]
+        in_30d = [r for r in ent_rows if r["ts"] > window_30d]
+        count_24h, sum_24h = len(in_24h), sum(r["amount"] for r in in_24h)
+        count_30d, sum_30d = len(in_30d), sum(r["amount"] for r in in_30d)
+        if count_30d == 0:
+            continue
+        # Expected 24h share of 30d activity
+        expected_count_24h = count_30d / 30
+        expected_sum_24h = sum_30d / 30
+        count_ratio = count_24h / expected_count_24h if expected_count_24h > 0 else 0
+        sum_ratio = count_24h / expected_count_24h if expected_count_24h > 0 else 0
+        if expected_sum_24h > 0:
+            sum_ratio = sum_24h / expected_sum_24h
+        if count_ratio >= ratio_threshold or sum_ratio >= ratio_threshold:
+            flagged_entities.append(entity)
+            flagged_txn_ids.extend(r["transaction_id"] for r in in_24h if r.get("transaction_id"))
+            details.append({
+                "entity": entity,
+                "count_24h": count_24h,
+                "count_30d": count_30d,
+                "sum_24h": round(sum_24h, 2),
+                "sum_30d": round(sum_30d, 2),
+                "count_ratio": round(count_ratio, 2),
+                "sum_ratio": round(sum_ratio, 2),
+            })
+    summary = (
+        f"Velocity analysis: {len(flagged_entities)} entity/entities with 24h activity ≥{ratio_threshold}x baseline."
+        if flagged_entities
+        else "No velocity spikes detected (24h vs 30d baseline)."
+    )
+    return {
+        "sufficient_data": True,
+        "flagged_entity_ids": flagged_entities,
+        "flagged_transaction_ids": list(dict.fromkeys(flagged_txn_ids)),
+        "details": details,
+        "summary": summary,
+    }

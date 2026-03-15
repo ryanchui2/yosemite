@@ -8,9 +8,11 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
-from model import benford_analysis, find_duplicates, score_transactions
+from model import benford_analysis, find_duplicates, score_transactions, velocity_analysis
 
 from invoice_fraud.graph_tool import graph_analysis
+from gnn_model import gnn_analysis
+from sequence_model import sequence_analysis
 
 # Load .env from ai/ so HF_API_KEY etc. are set regardless of cwd
 _ai_dir = os.path.dirname(os.path.abspath(__file__))
@@ -44,19 +46,31 @@ def _synthesize_report_from_tools(
     dup_result: dict,
     graph_flagged_ids: Optional[list] = None,
     graph_summary: Optional[str] = None,
+    velocity_flagged_ids: Optional[list] = None,
+    velocity_summary: Optional[str] = None,
+    gnn_flagged_ids: Optional[list] = None,
+    gnn_summary: Optional[str] = None,
+    sequence_flagged_ids: Optional[list] = None,
+    sequence_summary: Optional[str] = None,
 ) -> "FraudReport":
     """Build a FraudReport from tool results when the LLM is unavailable."""
     from invoice_fraud.agent import FraudReport
 
     graph_flagged_ids = graph_flagged_ids or []
+    velocity_flagged_ids = velocity_flagged_ids or []
+    gnn_flagged_ids = gnn_flagged_ids or []
+    sequence_flagged_ids = sequence_flagged_ids or []
     has_anomalies = len(anomalous_ids) > 0
     has_duplicates = duplicate_groups_count > 0
     has_graph = len(graph_flagged_ids) > 0
-    signal_count = sum([has_anomalies, benford_suspicious, has_duplicates, has_graph])
+    has_velocity = len(velocity_flagged_ids) > 0
+    has_gnn = len(gnn_flagged_ids) > 0
+    has_sequence = len(sequence_flagged_ids) > 0
+    signal_count = sum([has_anomalies, benford_suspicious, has_duplicates, has_graph, has_velocity, has_gnn, has_sequence])
 
     if signal_count == 0:
         risk_level = "low"
-    elif has_anomalies and (benford_suspicious or has_duplicates or has_graph):
+    elif has_anomalies and (benford_suspicious or has_duplicates or has_graph or has_velocity or has_gnn or has_sequence):
         risk_level = "critical"
     elif signal_count >= 2 or has_anomalies:
         risk_level = "high"
@@ -72,8 +86,14 @@ def _synthesize_report_from_tools(
         parts.append(f"Duplicate detection found {duplicate_groups_count} group(s).")
     if has_graph:
         parts.append(f"Graph analysis flagged {len(graph_flagged_ids)} transaction(s).")
+    if has_velocity:
+        parts.append(f"Velocity analysis flagged {len(velocity_flagged_ids)} transaction(s).")
+    if has_gnn:
+        parts.append(f"GNN (GCN) flagged {len(gnn_flagged_ids)} transaction(s).")
+    if has_sequence:
+        parts.append(f"Sequence (BiLSTM) flagged {len(sequence_flagged_ids)} transaction(s).")
     if not parts:
-        parts.append("No anomalies, Benford deviation, duplicate groups, or graph signals were detected.")
+        parts.append("No anomalies, Benford deviation, duplicate groups, graph, velocity, GNN, or sequence signals were detected.")
     summary = " ".join(parts)
 
     recommendations = []
@@ -85,6 +105,12 @@ def _synthesize_report_from_tools(
         recommendations.append("Investigate duplicate invoice groups.")
     if has_graph:
         recommendations.append("Review transactions in suspicious graph components.")
+    if has_velocity:
+        recommendations.append("Review entities with 24h activity spikes (velocity).")
+    if has_gnn:
+        recommendations.append("Review transactions flagged by GNN (graph risk).")
+    if has_sequence:
+        recommendations.append("Review entities flagged by sequence (temporal) analysis.")
     if not recommendations:
         recommendations.append("Continue routine monitoring.")
 
@@ -97,6 +123,12 @@ def _synthesize_report_from_tools(
         recommendations=recommendations,
         graph_flagged_ids=graph_flagged_ids,
         graph_summary=graph_summary or "",
+        velocity_flagged_ids=velocity_flagged_ids,
+        velocity_summary=velocity_summary or "",
+        gnn_flagged_ids=gnn_flagged_ids,
+        gnn_summary=gnn_summary or "",
+        sequence_flagged_ids=sequence_flagged_ids,
+        sequence_summary=sequence_summary or "",
     )
 
 
@@ -170,6 +202,32 @@ def graph(req: GraphRequest):
     return graph_analysis([t.model_dump() for t in req.transactions])
 
 
+# ── Behavioral velocity (novel fraud signal) ──────────────────────────────────
+
+class VelocityRequest(BaseModel):
+    transactions: List[GraphTx]
+
+
+@app.post("/velocity")
+def velocity(req: VelocityRequest):
+    """Run behavioral velocity analysis: flag entities with 24h activity ≥3x 30d baseline."""
+    return velocity_analysis([t.model_dump() for t in req.transactions])
+
+
+# ── GNN (2-layer GCN) and BiLSTM sequence (novel signals) ─────────────────────
+
+@app.post("/gnn")
+def gnn(req: GraphRequest):
+    """Run 2-layer GCN on transaction graph; returns flagged_transaction_ids and summary."""
+    return gnn_analysis([t.model_dump() for t in req.transactions])
+
+
+@app.post("/sequence")
+def sequence(req: VelocityRequest):
+    """Run BiLSTM sequence analysis per entity; returns flagged_transaction_ids and summary."""
+    return sequence_analysis([t.model_dump() for t in req.transactions])
+
+
 # ── Railtracks agent scan ─────────────────────────────────────────────────────
 
 class AgentScanTransaction(BaseModel):
@@ -194,6 +252,13 @@ def _use_ensemble_pipeline() -> bool:
     return os.environ.get("FRAUD_PIPELINE", "synthesizer").lower() in ("ensemble", "multi")
 
 
+def _use_llm_for_fraud() -> bool:
+    """Use LLM when GEMINI_API_KEY is set (preferred) or USE_LLM_FOR_FRAUD is true; otherwise deterministic synthesis only."""
+    if os.environ.get("GEMINI_API_KEY"):
+        return True
+    return os.environ.get("USE_LLM_FOR_FRAUD", "").lower() in ("true", "1", "yes")
+
+
 @app.post("/agent-scan")
 async def agent_scan(req: AgentScanRequest):
     """Run fraud detection tools (anomaly, Benford, duplicates, graph) then synthesize a FraudReport.
@@ -201,7 +266,10 @@ async def agent_scan(req: AgentScanRequest):
     When FRAUD_PIPELINE=ensemble or multi, uses the multi-agent coordinator (incl. Graph and optional Document agents).
     Otherwise uses the synthesizer with precomputed tool results.
     Optional document_base64 + mime_type enable VLM document analysis in ensemble mode.
+    Returns duration_ms for real-time latency visibility.
     """
+    import time
+    start_ms = time.perf_counter() * 1000
     try:
         tx_list = [t.model_dump() for t in req.transactions]
 
@@ -211,6 +279,9 @@ async def agent_scan(req: AgentScanRequest):
         benford_result = benford_analysis(amounts)
         dup_result = find_duplicates(tx_list)
         graph_result = graph_analysis(tx_list)
+        velocity_result = velocity_analysis(tx_list)
+        gnn_result = gnn_analysis(tx_list)
+        sequence_result = sequence_analysis(tx_list)
 
         anomalous_ids = [
             r["transaction_id"]
@@ -223,11 +294,42 @@ async def agent_scan(req: AgentScanRequest):
         duplicate_groups_count = dup_result.get("total_duplicate_groups", 0)
         graph_flagged_ids = list(graph_result.get("flagged_transaction_ids", []))
         graph_summary = graph_result.get("summary") or ""
+        velocity_flagged_ids = list(velocity_result.get("flagged_transaction_ids", []))
+        velocity_summary = velocity_result.get("summary") or ""
+        gnn_flagged_ids = list(gnn_result.get("flagged_transaction_ids", []))
+        gnn_summary = gnn_result.get("summary") or ""
+        sequence_flagged_ids = list(sequence_result.get("flagged_transaction_ids", []))
+        sequence_summary = sequence_result.get("summary") or ""
 
         use_ensemble = _use_ensemble_pipeline()
         report = None
 
-        if use_ensemble:
+        if not _use_llm_for_fraud():
+            # Deterministic path: no LLM calls; avoids model-not-found when backend has no compatible model.
+            report = _synthesize_report_from_tools(
+                anomalous_ids=anomalous_ids,
+                benford_suspicious=benford_suspicious,
+                duplicate_groups_count=duplicate_groups_count,
+                dup_result=dup_result,
+                graph_flagged_ids=graph_flagged_ids,
+                graph_summary=graph_summary,
+                velocity_flagged_ids=velocity_flagged_ids,
+                velocity_summary=velocity_summary,
+                gnn_flagged_ids=gnn_flagged_ids,
+                gnn_summary=gnn_summary,
+                sequence_flagged_ids=sequence_flagged_ids,
+                sequence_summary=sequence_summary,
+            )
+            if req.document_base64 and req.mime_type:
+                try:
+                    from invoice_fraud.document_tool import analyze_document_vlm
+                    doc_result = analyze_document_vlm(req.document_base64, req.mime_type)
+                    report.document_risk_level = doc_result.get("risk_level", "LOW")
+                    report.document_signals = doc_result.get("fraud_signals") or []
+                    report.document_summary = doc_result.get("summary")
+                except Exception:
+                    pass
+        elif use_ensemble:
             # Ensemble path: coordinator delegates to Anomaly, Benford, Duplicate, Document (if doc provided), Graph agents.
             prompt = (
                 "Analyse this batch of transactions for fraud. Use your specialist agents "
@@ -252,6 +354,12 @@ async def agent_scan(req: AgentScanRequest):
                     dup_result=dup_result,
                     graph_flagged_ids=graph_flagged_ids,
                     graph_summary=graph_summary,
+                    velocity_flagged_ids=velocity_flagged_ids,
+                    velocity_summary=velocity_summary,
+                    gnn_flagged_ids=gnn_flagged_ids,
+                    gnn_summary=gnn_summary,
+                    sequence_flagged_ids=sequence_flagged_ids,
+                    sequence_summary=sequence_summary,
                 )
                 if req.document_base64 and req.mime_type:
                     try:
@@ -294,6 +402,25 @@ async def agent_scan(req: AgentScanRequest):
                     },
                     indent=2,
                 )
+                + "\n\nVelocity analysis:\n"
+                + json.dumps(
+                    {
+                        "flagged_transaction_ids": velocity_flagged_ids,
+                        "flagged_entity_ids": velocity_result.get("flagged_entity_ids", []),
+                        "summary": velocity_summary,
+                    },
+                    indent=2,
+                )
+                + "\n\nGNN (2-layer GCN) analysis:\n"
+                + json.dumps(
+                    {"flagged_transaction_ids": gnn_flagged_ids, "summary": gnn_summary},
+                    indent=2,
+                )
+                + "\n\nSequence (BiLSTM) analysis:\n"
+                + json.dumps(
+                    {"flagged_transaction_ids": sequence_flagged_ids, "summary": sequence_summary},
+                    indent=2,
+                )
             )
             try:
                 synthesizer = _get_fraud_synthesizer()
@@ -307,6 +434,12 @@ async def agent_scan(req: AgentScanRequest):
                     dup_result=dup_result,
                     graph_flagged_ids=graph_flagged_ids,
                     graph_summary=graph_summary,
+                    velocity_flagged_ids=velocity_flagged_ids,
+                    velocity_summary=velocity_summary,
+                    gnn_flagged_ids=gnn_flagged_ids,
+                    gnn_summary=gnn_summary,
+                    sequence_flagged_ids=sequence_flagged_ids,
+                    sequence_summary=sequence_summary,
                 )
                 if req.document_base64 and req.mime_type:
                     try:
@@ -324,18 +457,15 @@ async def agent_scan(req: AgentScanRequest):
         report.duplicate_groups_count = duplicate_groups_count
         report.graph_flagged_ids = graph_flagged_ids
         report.graph_summary = graph_summary
+        report.velocity_flagged_ids = velocity_flagged_ids
+        report.velocity_summary = velocity_summary
+        report.gnn_flagged_ids = gnn_flagged_ids
+        report.gnn_summary = gnn_summary
+        report.sequence_flagged_ids = sequence_flagged_ids
+        report.sequence_summary = sequence_summary
 
-        # Optional second-pass reviewer agent.
-        # #region agent log
-        _rev_raw = os.environ.get("FRAUD_REVIEWER_ENABLED", "<unset>")
-        _rev_condition = str(_rev_raw).lower() in ("true", "1", "yes")
-        try:
-            with open("/Users/ryanalumkal/Documents/GitHub/arrt/.cursor/debug.log", "a") as _f:
-                _f.write(json.dumps({"location": "main.py:reviewer_check", "message": "FRAUD_REVIEWER_ENABLED", "data": {"raw": repr(_rev_raw), "condition_true": _rev_condition}, "timestamp": __import__("time").time() * 1000}) + "\n")
-        except Exception:
-            pass
-        # #endregion
-        if os.environ.get("FRAUD_REVIEWER_ENABLED", "").lower() in ("true", "1", "yes"):
+        # Optional second-pass reviewer agent (only when USE_LLM_FOR_FRAUD is set).
+        if _use_llm_for_fraud() and os.environ.get("FRAUD_REVIEWER_ENABLED", "").lower() in ("true", "1", "yes"):
             try:
                 from invoice_fraud.multi_agent import fraud_reviewer
                 review_prompt = (
@@ -345,26 +475,15 @@ async def agent_scan(req: AgentScanRequest):
                     f"Recommendations: {report.recommendations}"
                 )
                 review_result = await rt.call(fraud_reviewer, review_prompt)
-                # #region agent log
-                try:
-                    with open("/Users/ryanalumkal/Documents/GitHub/arrt/.cursor/debug.log", "a") as _f:
-                        _f.write(json.dumps({"location": "main.py:reviewer_after_call", "message": "review_result", "data": {"has_structured": review_result.structured is not None, "has_notes": bool(review_result.structured and getattr(review_result.structured, "review_notes", None))}, "timestamp": __import__("time").time() * 1000}) + "\n")
-                except Exception:
-                    pass
-                # #endregion
                 if review_result.structured and review_result.structured.review_notes:
                     report.review_notes = review_result.structured.review_notes
-            except Exception as e:
-                # #region agent log
-                try:
-                    with open("/Users/ryanalumkal/Documents/GitHub/arrt/.cursor/debug.log", "a") as _f:
-                        _f.write(json.dumps({"location": "main.py:reviewer_exception", "message": "reviewer_failed", "data": {"type": type(e).__name__, "msg": str(e)}, "timestamp": __import__("time").time() * 1000}) + "\n")
-                except Exception:
-                    pass
-                # #endregion
+            except Exception:
                 pass  # Don't fail the request if reviewer fails
 
-        return report.model_dump()
+        duration_ms = round((time.perf_counter() * 1000) - start_ms)
+        out = report.model_dump()
+        out["duration_ms"] = duration_ms
+        return out
     except Exception as e:
         tb = traceback.format_exc()
         raise HTTPException(

@@ -12,7 +12,12 @@ import railtracks as rt
 from pydantic import BaseModel, Field
 
 from ._llm import make_llm, make_llm_coordinator
-from .tools import run_anomaly_scoring, run_benford_analysis, run_duplicate_detection
+from .tools import (
+    run_anomaly_scoring,
+    run_benford_analysis,
+    run_duplicate_detection,
+    run_velocity_analysis,
+)
 
 
 class FraudReport(BaseModel):
@@ -58,6 +63,30 @@ class FraudReport(BaseModel):
         default=None,
         description="Optional second-pass review notes from the reviewer/critic agent.",
     )
+    velocity_flagged_ids: Optional[List[str]] = Field(
+        default_factory=list,
+        description="Transaction IDs flagged by behavioral velocity (24h spike vs 30d baseline).",
+    )
+    velocity_summary: Optional[str] = Field(
+        default=None,
+        description="One-line summary from velocity analysis.",
+    )
+    gnn_flagged_ids: Optional[List[str]] = Field(
+        default_factory=list,
+        description="Transaction IDs flagged by GNN (2-layer GCN) on transaction graph.",
+    )
+    gnn_summary: Optional[str] = Field(
+        default=None,
+        description="One-line summary from GNN analysis.",
+    )
+    sequence_flagged_ids: Optional[List[str]] = Field(
+        default_factory=list,
+        description="Transaction IDs flagged by BiLSTM sequence (temporal) analysis per entity.",
+    )
+    sequence_summary: Optional[str] = Field(
+        default=None,
+        description="One-line summary from sequence analysis.",
+    )
 
 
 class ReviewNotes(BaseModel):
@@ -67,7 +96,7 @@ class ReviewNotes(BaseModel):
 
 fraud_analyst = rt.agent_node(
     name="FraudAnalyst",
-    tool_nodes=[run_anomaly_scoring, run_benford_analysis, run_duplicate_detection],
+    tool_nodes=[run_anomaly_scoring, run_benford_analysis, run_duplicate_detection, run_velocity_analysis],
     llm=make_llm(),
     output_schema=FraudReport,
     system_message=(
@@ -77,8 +106,10 @@ fraud_analyst = rt.agent_node(
         "Step 2: Extract all numeric amounts from the transactions and call run_benford_analysis "
         "to check for statistical manipulation.\n"
         "Step 3: Call run_duplicate_detection with the full transaction list to find duplicate "
-        "invoices or repeated charges.\n\n"
-        "After all three tools have returned, synthesize their results into a FraudReport:\n"
+        "invoices or repeated charges.\n"
+        "Step 4: If transactions have timestamps, call run_velocity_analysis to flag entities "
+        "with 24h activity spikes vs 30d baseline.\n\n"
+        "After all tools have returned, synthesize their results into a FraudReport:\n"
         "- risk_level: 'low' if no signals, 'medium' if one mild signal, 'high' if anomalies "
         "or duplicates are present, 'critical' if multiple strong signals overlap.\n"
         "- summary: concise 2-3 sentence description of what was found.\n"
@@ -86,6 +117,10 @@ fraud_analyst = rt.agent_node(
         "- benford_suspicious: the is_suspicious flag from the Benford result "
         "(false if sufficient_data is false).\n"
         "- duplicate_groups_count: the total_duplicate_groups value.\n"
+        "- graph_flagged_ids: the flagged_transaction_ids from the graph analysis result (if present).\n"
+        "- graph_summary: the summary from the graph analysis result (if present).\n"
+        "- velocity_flagged_ids: the flagged_transaction_ids from run_velocity_analysis (if present).\n"
+        "- velocity_summary: the summary from the velocity analysis result (if present).\n"
         "- recommendations: specific, actionable next steps (freeze accounts, manual review, etc.)."
     ),
 )
@@ -118,6 +153,12 @@ fraud_synthesizer = rt.agent_node(
         "detection result.\n"
         "- graph_flagged_ids: the flagged_transaction_ids from the graph analysis result (if present).\n"
         "- graph_summary: the summary from the graph analysis result (if present).\n"
+        "- velocity_flagged_ids: the flagged_transaction_ids from the velocity analysis result (if present).\n"
+        "- velocity_summary: the summary from the velocity analysis result (if present).\n"
+        "- gnn_flagged_ids: the flagged_transaction_ids from the GNN (GCN) analysis result (if present).\n"
+        "- gnn_summary: the summary from the GNN analysis result (if present).\n"
+        "- sequence_flagged_ids: the flagged_transaction_ids from the sequence (BiLSTM) analysis result (if present).\n"
+        "- sequence_summary: the summary from the sequence analysis result (if present).\n"
         "- recommendations: specific, actionable next steps based on the findings."
     ),
 )
