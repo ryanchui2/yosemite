@@ -11,6 +11,7 @@ import { RiskOverview } from "@/components/RiskOverview";
 import { scanSanctions, scanAnomalies, analyzeGeoRisk, scanFraud, fetchFraudReportSummary } from "@/lib/api";
 import type { SanctionsResponse, AnomaliesResponse, GeoRiskResponse, FraudScanResponse, FraudReportSummary } from "@/lib/api";
 import { AlertTriangle, Globe, Shield, Upload } from "lucide-react";
+import Image from "next/image";
 
 type Report = "anomalies" | "sanctions" | "georisk";
 
@@ -314,10 +315,11 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen bg-background p-6 space-y-6 font-sans">
-      {/* Header */}
-      <header className="flex items-center justify-between px-2 mb-8">
-        <div>
-          <h1 className="text-lg font-semibold text-gray-900 tracking-tight">yosemite</h1>
+      {/* Top nav bar */}
+      <header className="flex items-center justify-between bg-card border border-white/50 shadow-card-soft rounded-2xl px-5 py-3 mb-8">
+        <div className="flex items-center gap-3">
+          <Image src="/yosemite_logo.png" alt="yosemite logo" width={32} height={32} className="rounded-xl" />
+          <span className="text-[17px] font-semibold tracking-tight text-gray-900" style={{ fontFamily: "var(--font-space-grotesk)" }}>yosemite</span>
         </div>
         {(sanctionsData || anomaliesData || geoRiskData) && (
           <PDFExport sanctionsData={sanctionsData} anomaliesData={anomaliesData} geoRiskData={geoRiskData} />

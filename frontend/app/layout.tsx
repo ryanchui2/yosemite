@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
-import { Geist } from "next/font/google";
+import { Geist, Space_Grotesk } from "next/font/google";
+import localFont from "next/font/local";
 import { ThemeProvider } from "next-themes";
 import "./globals.css";
 
@@ -19,6 +20,22 @@ const geistSans = Geist({
   subsets: ["latin"],
 });
 
+const spaceGrotesk = Space_Grotesk({
+  variable: "--font-space-grotesk",
+  display: "swap",
+  subsets: ["latin"],
+});
+
+const satoshi = localFont({
+  src: [
+    { path: "../public/satoshi/Satoshi-Regular.otf", weight: "400" },
+    { path: "../public/satoshi/Satoshi-Medium.otf", weight: "500" },
+    { path: "../public/satoshi/Satoshi-Bold.otf", weight: "700" },
+  ],
+  variable: "--font-satoshi",
+  display: "swap",
+});
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -26,7 +43,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={`${geistSans.className} antialiased`}>
+      <body className={`${geistSans.className} ${spaceGrotesk.variable} ${satoshi.variable} antialiased`}>
         <ThemeProvider
           attribute="class"
           defaultTheme="light"
