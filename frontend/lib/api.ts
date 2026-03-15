@@ -55,7 +55,14 @@ export interface Transaction {
 
 // ── API functions ─────────────────────────────────────────────────────────────
 
-/** Scan all transactions or a specific list for fraud */
+/** GET cached fraud scan (used on page load; does not re-run scan). */
+export async function fetchCachedFraudScan(): Promise<FraudScanResponse> {
+  const res = await fetch(`${BACKEND_URL}/api/fraud/scan`);
+  if (!res.ok) throw new Error(`Fraud scan failed: ${res.status}`);
+  return res.json();
+}
+
+/** Scan all transactions or a specific list for fraud (POST; runs scan and updates cache). */
 export async function scanFraud(
   transactionIds?: string[],
 ): Promise<FraudScanResponse> {

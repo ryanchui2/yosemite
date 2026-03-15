@@ -44,10 +44,22 @@ pub async fn report(
 }
 
 pub async fn summary(State(state): State<AppState>) -> Json<FraudReportSummaryResponse> {
+    let cached: Option<serde_json::Value> =
+        sqlx::query_scalar("SELECT summary_response FROM fraud_scan_cache WHERE id = 1")
+            .fetch_optional(&state.db)
+            .await
+            .unwrap_or(None);
+
+    if let Some(ref v) = cached {
+        if let Ok(resp) = serde_json::from_value::<FraudReportSummaryResponse>(v.clone()) {
+            return Json(resp);
+        }
+    }
+
     let transactions = sqlx::query_as::<_, ScoringTx>("SELECT * FROM transactions")
-    .fetch_all(&state.db)
-    .await
-    .unwrap_or_default();
+        .fetch_all(&state.db)
+        .await
+        .unwrap_or_default();
 
     let mut flagged_results = transactions
         .iter()
@@ -75,34 +87,40 @@ pub async fn summary(State(state): State<AppState>) -> Json<FraudReportSummaryRe
 
     let fallback = build_fallback_summary(&flagged_results);
 
-    if flagged_results.is_empty() {
-        return Json(FraudReportSummaryResponse {
+    let response = if flagged_results.is_empty() {
+        FraudReportSummaryResponse {
             report_count: 0,
             ai_generated: false,
             common_vulnerabilities: fallback.common_vulnerabilities,
             potential_reasons: fallback.potential_reasons,
             improvement_advice: fallback.improvement_advice,
             disclaimer: fallback.disclaimer,
-        });
-    }
-
-    let report_context = build_report_context(&flagged_results);
-    let (summary, ai_generated) = match llm::summarize_fraud_reports(&state.http, &report_context).await {
-        Ok(summary) => (summary, true),
-        Err(err) => {
-            tracing::warn!("Failed to generate fraud report summary with AI: {}", err);
-            (fallback, false)
+        }
+    } else {
+        let report_context = build_report_context(&flagged_results);
+        let (summary, ai_generated) = match llm::summarize_fraud_reports(&state.http, &report_context).await {
+            Ok(summary) => (summary, true),
+            Err(err) => {
+                tracing::warn!("Failed to generate fraud report summary with AI: {}", err);
+                (fallback, false)
+            }
+        };
+        FraudReportSummaryResponse {
+            report_count: flagged_results.len(),
+            ai_generated,
+            common_vulnerabilities: summary.common_vulnerabilities,
+            potential_reasons: summary.potential_reasons,
+            improvement_advice: summary.improvement_advice,
+            disclaimer: summary.disclaimer,
         }
     };
 
-    Json(FraudReportSummaryResponse {
-        report_count: flagged_results.len(),
-        ai_generated,
-        common_vulnerabilities: summary.common_vulnerabilities,
-        potential_reasons: summary.potential_reasons,
-        improvement_advice: summary.improvement_advice,
-        disclaimer: summary.disclaimer,
-    })
+    let json = serde_json::to_value(&response).unwrap_or_default();
+    let _ = sqlx::query("UPDATE fraud_scan_cache SET summary_response = $1, updated_at = NOW() WHERE id = 1")
+        .bind(&json)
+        .execute(&state.db)
+        .await;
+    Json(response)
 }
 
 fn build_report_context(results: &[FraudResult]) -> String {

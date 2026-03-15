@@ -64,7 +64,7 @@ pub struct ScanRequest {
 }
 
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct FraudResult {
     pub transaction_id: String,
     pub customer_name: Option<String>,
@@ -76,7 +76,7 @@ pub struct FraudResult {
     pub anomaly_score: Option<f64>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct ScanResponse {
     pub total_scanned: usize,
     pub flagged: usize,
@@ -165,7 +165,7 @@ pub struct FraudReportSummaryContent {
     pub disclaimer: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct FraudReportSummaryResponse {
     pub report_count: usize,
     pub ai_generated: bool,

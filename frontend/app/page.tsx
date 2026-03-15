@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { ProtectionScore } from "@/components/ProtectionScore";
 import { FlaggedTransactions } from "@/components/FlaggedTransactions";
 import { RiskOverview } from "@/components/RiskOverview";
-import { scanSanctions, scanAnomalies, analyzeGeoRisk, scanFraud, fetchFraudReportSummary, saveCsvData, fetchSavedCsvList, deleteSavedCsv, saveEntityList, fetchSavedEntityList, deleteSavedEntity } from "@/lib/api";
+import { scanSanctions, scanAnomalies, analyzeGeoRisk, fetchCachedFraudScan, fetchFraudReportSummary, saveCsvData, fetchSavedCsvList, saveEntityList, fetchSavedEntityList } from "@/lib/api";
 import type { SanctionsResponse, AnomaliesResponse, GeoRiskResponse, FraudScanResponse, FraudReportSummary, SavedCsvData, AnomalyResult, SavedEntityData } from "@/lib/api";
 import { AlertTriangle, Globe, Shield, Upload, Cuboid, Drama, Ship } from "lucide-react";
 import Image from "next/image";
@@ -125,7 +125,22 @@ export default function Dashboard() {
   useEffect(() => {
     let cancelled = false;
     setFraudScanLoading(true);
-    Promise.allSettled([scanFraud(), fetchFraudReportSummary()])
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/a3ba57d6-4434-4c97-9efb-bd3955e640d5', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'page.tsx:mount-fraud-effect', message: 'Overview fraud load effect running', data: { hypothesisId: 'H1' }, timestamp: Date.now() }) }).catch(() => { });
+    // #endregion
+    const runCachedScan = () => {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/a3ba57d6-4434-4c97-9efb-bd3955e640d5', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'page.tsx:fetchCachedFraudScan-call', message: 'Calling fetchCachedFraudScan (GET)', data: { hypothesisId: 'H1', runId: 'post-fix' }, timestamp: Date.now() }) }).catch(() => { });
+      // #endregion
+      return fetchCachedFraudScan();
+    };
+    const runSummary = () => {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/a3ba57d6-4434-4c97-9efb-bd3955e640d5', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'page.tsx:fetchSummary-call', message: 'Calling fetchFraudReportSummary (GET)', data: { hypothesisId: 'H1', runId: 'post-fix' }, timestamp: Date.now() }) }).catch(() => { });
+      // #endregion
+      return fetchFraudReportSummary();
+    };
+    Promise.allSettled([runCachedScan(), runSummary()])
       .then(([scanResult, summaryResult]) => {
         if (cancelled) return;
         if (scanResult.status === "fulfilled") setFraudScanData(scanResult.value);
@@ -176,11 +191,6 @@ export default function Dashboard() {
   const [saveLogName, setSaveLogName] = useState("");
   const [lastScannedCount, setLastScannedCount] = useState(0);
 
-  const [savedLogs, setSavedLogs] = useState<SavedCsvData[]>([]);
-  const [savedLogsLoading, setSavedLogsLoading] = useState(false);
-
-  const [savedEntityLogs, setSavedEntityLogs] = useState<SavedEntityData[]>([]);
-  const [savedEntityLogsLoading, setSavedEntityLogsLoading] = useState(false);
   const [entitySaveMessage, setEntitySaveMessage] = useState<string | null>(null);
   const [entitySaveLoading, setEntitySaveLoading] = useState(false);
   const [saveEntityLogName, setSaveEntityLogName] = useState("");
@@ -327,8 +337,12 @@ export default function Dashboard() {
         file = rowsToCSVFile(headers, newRowsOnly);
       }
 
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/a3ba57d6-4434-4c97-9efb-bd3955e640d5', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'page.tsx:scanAnomalies-call', message: 'Calling scanAnomalies (user action)', data: { hypothesisId: 'H2' }, timestamp: Date.now() }) }).catch(() => { });
+      // #endregion
       const data = await scanAnomalies(file);
 
+      let finalAnomalyState: { scan_id: string; total_transactions: number; flagged: number; results: AnomalyResult[] };
       if (!doFullScan && anomaliesData && data.results.length > 0) {
         const existingResults = anomaliesData.results;
         const newResults = data.results.map((r, i) => ({
@@ -339,16 +353,31 @@ export default function Dashboard() {
         const mergedFlagged = mergedResults.filter(
           (r) => r.risk_level === "HIGH" || r.risk_level === "MEDIUM"
         ).length;
-        setAnomaliesData({
+        finalAnomalyState = {
           scan_id: anomaliesData.scan_id,
           total_transactions: totalRows,
           flagged: mergedFlagged,
           results: mergedResults,
-        });
+        };
+        setAnomaliesData(finalAnomalyState);
       } else {
+        finalAnomalyState = data;
         setAnomaliesData(data);
       }
       setLastScannedCount(totalRows);
+
+      // Persist scan so it loads on next visit
+      const name = `Transactions – ${new Date().toLocaleDateString("en-CA", { month: "short", day: "numeric", year: "numeric" })}`;
+      saveCsvData({
+        name,
+        stage: "after_scan",
+        file_name: undefined,
+        headers,
+        rows: allRows,
+        scan_id: finalAnomalyState.scan_id,
+        scan_summary: { total_transactions: finalAnomalyState.total_transactions, flagged: finalAnomalyState.flagged },
+        scan_results: finalAnomalyState.results,
+      }).catch(() => { });
     } catch {
       setError("Anomaly scan failed. Is the backend running?");
     } finally {
@@ -407,7 +436,6 @@ export default function Dashboard() {
       });
       setCsvSaveMessage("Saved");
       setTimeout(() => setCsvSaveMessage(null), 3000);
-      loadSavedLogs();
     } catch (e) {
       setCsvSaveMessage(e instanceof Error ? e.message : "Save failed");
     } finally {
@@ -415,26 +443,16 @@ export default function Dashboard() {
     }
   }
 
-  /** Fetch saved transaction logs (for anomaly tab). */
-  const loadSavedLogs = useCallback(async () => {
-    setSavedLogsLoading(true);
-    try {
-      const list = await fetchSavedCsvList();
-      setSavedLogs(list);
-    } catch {
-      setSavedLogs([]);
-    } finally {
-      setSavedLogsLoading(false);
-    }
-  }, []);
-
-  /** Load a saved log into the workspace so the user can add new transactions and re-scan. */
-  function handleLoadSavedLog(saved: SavedCsvData) {
+  /** Apply a saved log to the workspace (used by auto-load on start and by manual load). */
+  const applySavedLog = useCallback((saved: SavedCsvData) => {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/a3ba57d6-4434-4c97-9efb-bd3955e640d5', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'page.tsx:applySavedLog', message: 'Applying saved anomaly log (no scan)', data: { hypothesisId: 'H2' }, timestamp: Date.now() }) }).catch(() => { });
+    // #endregion
     const headers = Array.isArray(saved.headers) ? (saved.headers as string[]) : [];
     const rows = Array.isArray(saved.rows) ? (saved.rows as Record<string, string>[]) : [];
     setCsvHeaders(headers);
     setCsvRows(rows);
-    setCsvFileName(saved.file_name ?? undefined);
+    setCsvFileName(undefined); // don't show saved file name in drop zone
     setCsvOriginalFile(null);
     setManualTransactions([]);
     setLastScannedCount(rows.length);
@@ -449,22 +467,22 @@ export default function Dashboard() {
     } else {
       setAnomaliesData(null);
     }
-  }
+  }, []);
 
-  /** Remove a saved log. */
-  async function handleDeleteSavedLog(id: string) {
-    try {
-      await deleteSavedCsv(id);
-      setSavedLogs((prev) => prev.filter((s) => s.id !== id));
-    } catch (e) {
-      setCsvSaveMessage(e instanceof Error ? e.message : "Delete failed");
-      setTimeout(() => setCsvSaveMessage(null), 3000);
-    }
-  }
-
+  /** On start, automatically load the most recent saved transaction log if any exist. */
   useEffect(() => {
-    if (activeTab === "anomaly") loadSavedLogs();
-  }, [activeTab, loadSavedLogs]);
+    let cancelled = false;
+    fetchSavedCsvList()
+      .then((list) => {
+        if (cancelled || list.length === 0) return;
+        const sorted = [...list].sort(
+          (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        );
+        applySavedLog(sorted[0]);
+      })
+      .catch(() => { });
+    return () => { cancelled = true; };
+  }, [applySavedLog]);
 
   /** Current entity list (file + manual) for Geo & Sanctions save. */
   function getCurrentEntities(): { description: string; country: string }[] {
@@ -487,7 +505,6 @@ export default function Dashboard() {
       });
       setEntitySaveMessage("Saved");
       setTimeout(() => setEntitySaveMessage(null), 3000);
-      loadSavedEntityLogs();
     } catch (e) {
       setEntitySaveMessage(e instanceof Error ? e.message : "Save failed");
     } finally {
@@ -495,20 +512,11 @@ export default function Dashboard() {
     }
   }
 
-  const loadSavedEntityLogs = useCallback(async () => {
-    setSavedEntityLogsLoading(true);
-    try {
-      const list = await fetchSavedEntityList();
-      setSavedEntityLogs(list);
-    } catch {
-      setSavedEntityLogs([]);
-    } finally {
-      setSavedEntityLogsLoading(false);
-    }
-  }, []);
-
-  /** Load a saved entity list so the user can add more and re-scan. */
-  function handleLoadSavedEntityLog(saved: SavedEntityData) {
+  /** Apply a saved entity list to the workspace (used by auto-load on start). */
+  const applySavedEntityLog = useCallback((saved: SavedEntityData) => {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/a3ba57d6-4434-4c97-9efb-bd3955e640d5', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'page.tsx:applySavedEntityLog', message: 'Applying saved entity log (no scan)', data: { hypothesisId: 'H3' }, timestamp: Date.now() }) }).catch(() => { });
+    // #endregion
     const entities = Array.isArray(saved.entities) ? (saved.entities as { description: string; country: string }[]) : [];
     setSanctionsFile(null);
     setUploadedSanctionsEntities([]);
@@ -524,21 +532,22 @@ export default function Dashboard() {
     } else {
       setGeoRiskData(null);
     }
-  }
+  }, []);
 
-  async function handleDeleteSavedEntityLog(id: string) {
-    try {
-      await deleteSavedEntity(id);
-      setSavedEntityLogs((prev) => prev.filter((s) => s.id !== id));
-    } catch (e) {
-      setEntitySaveMessage(e instanceof Error ? e.message : "Delete failed");
-      setTimeout(() => setEntitySaveMessage(null), 3000);
-    }
-  }
-
+  /** On start, automatically load the most recent saved entity list if any exist. */
   useEffect(() => {
-    if (activeTab === "geosanctions") loadSavedEntityLogs();
-  }, [activeTab, loadSavedEntityLogs]);
+    let cancelled = false;
+    fetchSavedEntityList()
+      .then((list) => {
+        if (cancelled || list.length === 0) return;
+        const sorted = [...list].sort(
+          (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        );
+        applySavedEntityLog(sorted[0]);
+      })
+      .catch(() => { });
+    return () => { cancelled = true; };
+  }, [applySavedEntityLog]);
 
   async function handleSanctionsScan() {
     if (!sanctionsFile && manualEntities.length === 0) return;
@@ -568,16 +577,25 @@ export default function Dashboard() {
     const geoPromise =
       uniqueCountries.length > 0 ? analyzeGeoRisk(uniqueCountries) : Promise.resolve(null);
 
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/a3ba57d6-4434-4c97-9efb-bd3955e640d5', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'page.tsx:handleSanctionsScan', message: 'Running sanctions/geo scan (user action)', data: { hypothesisId: 'H3' }, timestamp: Date.now() }) }).catch(() => { });
+    // #endregion
     try {
       const [sanctionsResult, geoResult] = await Promise.allSettled([sanctionsPromise, geoPromise]);
-      if (sanctionsResult.status === "fulfilled" && sanctionsResult.value) {
-        setSanctionsData(sanctionsResult.value);
-      }
-      if (geoResult.status === "fulfilled" && geoResult.value) {
-        setGeoRiskData(geoResult.value);
-      }
+      const newSanctions = sanctionsResult.status === "fulfilled" ? sanctionsResult.value : null;
+      const newGeo = geoResult.status === "fulfilled" ? geoResult.value : null;
+      if (newSanctions) setSanctionsData(newSanctions);
+      if (newGeo) setGeoRiskData(newGeo);
       if (sanctionsResult.status === "rejected" || geoResult.status === "rejected") {
         setError("Some scans failed. Is the backend running?");
+      } else if (allEntities.length > 0 && (newSanctions || newGeo)) {
+        // Persist scan so it loads on next visit
+        saveEntityList({
+          name: `Entity list – ${new Date().toLocaleDateString("en-CA", { month: "short", day: "numeric", year: "numeric" })}`,
+          entities: allEntities,
+          sanctions_results: newSanctions ?? null,
+          geo_results: newGeo ?? null,
+        }).catch(() => { });
       }
     } catch {
       setError("Scan failed. Is the backend running?");
@@ -837,35 +855,6 @@ export default function Dashboard() {
                       {csvSaveMessage}
                     </p>
                   )}
-
-                  {/* Previous transaction logs — load to add new transactions and re-scan */}
-                  <div className="space-y-2 pt-2 border-t border-border">
-                    <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Your saved transaction logs</p>
-                    {savedLogsLoading ? (
-                      <p className="text-[11px] text-muted-foreground font-mono">Loading...</p>
-                    ) : savedLogs.length === 0 ? (
-                      <p className="text-[11px] text-muted-foreground">No saved logs yet. Save above to keep a record.</p>
-                    ) : (
-                      <ul className="space-y-1.5 max-h-36 overflow-auto">
-                        {savedLogs.map((log) => {
-                          const rows = Array.isArray(log.rows) ? (log.rows as Record<string, string>[]).length : 0;
-                          const label = (log.name || log.file_name || `Saved ${new Date(log.created_at).toLocaleDateString("en-CA", { month: "short", day: "numeric", year: "numeric" })}`).trim();
-                          return (
-                            <li key={log.id} className="flex items-center justify-between gap-2 border border-border px-2.5 py-1.5 bg-background">
-                              <div className="min-w-0 flex-1">
-                                <p className="text-xs font-medium text-foreground truncate">{label}</p>
-                                <p className="text-[10px] text-muted-foreground">{rows} transaction{rows !== 1 ? "s" : ""}</p>
-                              </div>
-                              <div className="flex items-center gap-1 shrink-0">
-                                <button type="button" onClick={() => handleLoadSavedLog(log)} className="text-[10px] uppercase tracking-wider border border-border hover:border-foreground px-2 py-1 text-foreground transition-colors">Load</button>
-                                <button type="button" onClick={() => handleDeleteSavedLog(log.id)} className="text-muted-foreground hover:text-destructive transition-colors" title="Delete">✕</button>
-                              </div>
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    )}
-                  </div>
                 </div>
 
                 {/* Right: Flagged Transactions */}
@@ -1061,35 +1050,6 @@ export default function Dashboard() {
                       {entitySaveMessage}
                     </p>
                   )}
-
-                  <div className="space-y-2 pt-2 border-t border-border">
-                    <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Your saved entity lists</p>
-                    {savedEntityLogsLoading ? (
-                      <p className="text-[11px] text-muted-foreground font-mono">Loading...</p>
-                    ) : savedEntityLogs.length === 0 ? (
-                      <p className="text-[11px] text-muted-foreground">No saved lists yet. Save above to keep a record.</p>
-                    ) : (
-                      <ul className="space-y-1.5 max-h-36 overflow-auto">
-                        {savedEntityLogs.map((log) => {
-                          const entities = Array.isArray(log.entities) ? (log.entities as { description: string; country: string }[]) : [];
-                          const count = entities.length;
-                          const label = (log.name || `Saved ${new Date(log.created_at).toLocaleDateString("en-CA", { month: "short", day: "numeric", year: "numeric" })}`).trim();
-                          return (
-                            <li key={log.id} className="flex items-center justify-between gap-2 border border-border px-2.5 py-1.5 bg-background">
-                              <div className="min-w-0 flex-1">
-                                <p className="text-xs font-medium text-foreground truncate">{label}</p>
-                                <p className="text-[10px] text-muted-foreground">{count} entit{count !== 1 ? "ies" : "y"}</p>
-                              </div>
-                              <div className="flex items-center gap-1 shrink-0">
-                                <button type="button" onClick={() => handleLoadSavedEntityLog(log)} className="text-[10px] uppercase tracking-wider border border-border hover:border-foreground px-2 py-1 text-foreground transition-colors">Load</button>
-                                <button type="button" onClick={() => handleDeleteSavedEntityLog(log.id)} className="text-muted-foreground hover:text-destructive transition-colors" title="Delete">✕</button>
-                              </div>
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    )}
-                  </div>
                 </div>
 
                 {/* Right: Report */}
