@@ -42,25 +42,101 @@ pub async fn scan(
         ai_base_url().trim_end_matches('/')
     );
 
+    // #region agent log
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open("/Users/ryanalumkal/Documents/GitHub/arrt/.cursor/debug.log")
+    {
+        use std::io::Write;
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis();
+        let _ = writeln!(
+            f,
+            r#"{{"location":"agent_scan.rs:scan","message":"request_received","data":{{"transaction_count":{},"hypothesisId":"H3"}},"timestamp":{}}}"#,
+            payload.transactions.len(),
+            ts
+        );
+    }
+    // #endregion
+
     match state.http.post(&url).json(&payload).send().await {
-        Ok(resp) => match resp.json::<Value>().await {
-            Ok(body) => (StatusCode::OK, Json(body)).into_response(),
-            Err(e) => (
-                StatusCode::BAD_GATEWAY,
+        Ok(resp) => {
+            let status = resp.status();
+            // #region agent log
+            if let Ok(mut f) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open("/Users/ryanalumkal/Documents/GitHub/arrt/.cursor/debug.log")
+            {
+                use std::io::Write;
+                let ts = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis();
+                let _ = writeln!(
+                    f,
+                    r#"{{"location":"agent_scan.rs:sidecar_response","message":"sidecar_status","data":{{"status":{},"hypothesisId":"H3"}},"timestamp":{}}}"#,
+                    status.as_u16(),
+                    ts
+                );
+            }
+            // #endregion
+            if !status.is_success() {
+                let body = resp.text().await.unwrap_or_else(|_| status.to_string());
+                return (
+                    StatusCode::BAD_GATEWAY,
+                    Json(serde_json::json!({
+                        "error": "AI service error",
+                        "detail": format!("{}: {}", status, body)
+                    })),
+                )
+                    .into_response();
+            }
+            match resp.json::<Value>().await {
+                Ok(body) => (StatusCode::OK, Json(body)).into_response(),
+                Err(e) => (
+                    StatusCode::BAD_GATEWAY,
+                    Json(serde_json::json!({
+                        "error": "Failed to parse agent-scan response",
+                        "detail": e.to_string()
+                    })),
+                )
+                    .into_response(),
+            }
+        }
+        Err(e) => {
+            // #region agent log
+            if let Ok(mut f) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open("/Users/ryanalumkal/Documents/GitHub/arrt/.cursor/debug.log")
+            {
+                use std::io::Write;
+                let ts = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis();
+                let detail = e.to_string();
+                let esc = detail.replace('\\', "\\\\").replace('"', "\\\"");
+                let _ = writeln!(
+                    f,
+                    r#"{{"location":"agent_scan.rs:sidecar_err","message":"sidecar_http_error","data":{{"detail":"{}","hypothesisId":"H3"}},"timestamp":{}}}"#,
+                    esc,
+                    ts
+                );
+            }
+            // #endregion
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
                 Json(serde_json::json!({
-                    "error": "Failed to parse agent-scan response",
+                    "error": "AI service unavailable",
                     "detail": e.to_string()
                 })),
             )
-                .into_response(),
-        },
-        Err(e) => (
-            StatusCode::SERVICE_UNAVAILABLE,
-            Json(serde_json::json!({
-                "error": "AI service unavailable",
-                "detail": e.to_string()
-            })),
-        )
-            .into_response(),
+                .into_response()
+        }
     }
 }

@@ -69,3 +69,41 @@ def run_duplicate_detection(transactions: list) -> dict:
     resp = httpx.post(url, json={"transactions": transactions}, timeout=30.0)
     resp.raise_for_status()
     return resp.json()
+
+
+@rt.function_node
+def run_graph_analysis(transactions: list) -> dict:
+    """Run graph-based fraud heuristics on a batch of transactions.
+
+    Builds a graph from transactions (nodes = transaction_ids; edges = shared
+    customer_id, order_id, or customer+amount+date). Flags transactions in
+    large/dense components or with high degree (potential rings or bursty clusters).
+
+    Args:
+        transactions (list): List of transaction dicts with transaction_id,
+            customer_id, order_id, amount, and timestamp fields.
+    """
+    url = f"{_ai_base_url()}/graph"
+    resp = httpx.post(url, json={"transactions": transactions}, timeout=30.0)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def _run_document_analysis_impl(document_base64: str, mime_type: str) -> dict:
+    from .document_tool import analyze_document_vlm
+    return analyze_document_vlm(document_base64, mime_type)
+
+
+@rt.function_node
+def run_document_analysis(document_base64: str, mime_type: str) -> dict:
+    """Run vision-based document fraud analysis (Gemini VLM).
+
+    Analyzes an invoice/document image or PDF for tampering, missing fields,
+    suspicious amounts, and other fraud signals. Call only when a document
+    is available (e.g. base64 and mime_type provided in the request).
+
+    Args:
+        document_base64 (str): Base64-encoded document bytes.
+        mime_type (str): MIME type, e.g. application/pdf, image/jpeg.
+    """
+    return _run_document_analysis_impl(document_base64, mime_type)

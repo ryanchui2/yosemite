@@ -2,7 +2,7 @@
 
 **Built with Railtracks**
 
-ARRT is a fraud detection and compliance intelligence platform for small businesses. It combines rule-based scoring, machine learning anomaly detection, and multi-agent AI pipelines to surface invoice fraud, sanctions exposure, and geopolitical risk in real time.
+ARRT is a fraud detection and compliance intelligence platform for small businesses. Built for real-time detection of fraudulent transactions and financial anomalies, it combines rule-based scoring, machine learning anomaly detection, and **Railtracks** multi-agent AI (anomaly detection, Benford's Law, duplicate detection) to surface invoice fraud, sanctions exposure, and geopolitical risk. Uses Railtracks for multi-agent fraud analysis.
 
 ## Architecture
 
@@ -73,8 +73,13 @@ railtracks viz --port 8002
 
 **`ai/.env`**
 ```
-GEMINI_API_KEY=...
-HF_API_KEY=...
+GEMINI_API_KEY=...   # optional, for document/vision analysis
+# For "Run full AI fraud analysis" (Railtracks), set one of:
+OPENAI_API_KEY=...   # OpenAI (or any OpenAI-compatible endpoint)
+HF_API_KEY=...       # or HuggingFace inference endpoint (hack-provided)
+# Optional: if one HF endpoint is slow, try the other (default: old)
+# HF_BASE_URL=https://vjioo4r1vyvcozuj.us-east-2.aws.endpoints.huggingface.cloud/v1
+# HF_BASE_URL=https://qyt7893blb71b5d3.us-east-2.aws.endpoints.huggingface.cloud/v1
 ```
 
 **`backend/.env`**

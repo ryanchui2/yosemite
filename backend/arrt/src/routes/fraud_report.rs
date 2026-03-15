@@ -2,12 +2,16 @@ use axum::{extract::State, Json};
 use std::collections::HashMap;
 
 use crate::models::fraud::{
-    FraudReportRequest, FraudReportResponse, FraudReportSummaryContent, FraudReportSummaryResponse,
-    FraudResult, ScoringTx,
+    AgentScanResponse, FraudReportRequest, FraudReportResponse, FraudReportSummaryContent,
+    FraudReportSummaryResponse, FraudResult, ScoringTx,
 };
 use crate::services::fraud_rules;
 use crate::services::llm;
 use crate::state::AppState;
+
+fn ai_base_url() -> String {
+    std::env::var("AI_SERVICE_URL").unwrap_or_else(|_| "http://localhost:8000".to_string())
+}
 
 pub async fn report(
     State(state): State<AppState>,
@@ -87,31 +91,56 @@ pub async fn summary(State(state): State<AppState>) -> Json<FraudReportSummaryRe
 
     let fallback = build_fallback_summary(&flagged_results);
 
-    let response = if flagged_results.is_empty() {
+    // Prefer Railtracks agent-scan when we have transactions and the AI service is available.
+    let response = if !transactions.is_empty() {
+        if let Some((content, report_count)) = try_railtracks_summary(&state, &transactions).await {
+            FraudReportSummaryResponse {
+                report_count,
+                ai_generated: true,
+                railtracks_generated: true,
+                common_vulnerabilities: content.common_vulnerabilities,
+                potential_reasons: content.potential_reasons,
+                improvement_advice: content.improvement_advice,
+                disclaimer: content.disclaimer,
+            }
+        } else if flagged_results.is_empty() {
+            FraudReportSummaryResponse {
+                report_count: 0,
+                ai_generated: false,
+                railtracks_generated: false,
+                common_vulnerabilities: fallback.common_vulnerabilities,
+                potential_reasons: fallback.potential_reasons,
+                improvement_advice: fallback.improvement_advice,
+                disclaimer: fallback.disclaimer,
+            }
+        } else {
+            let report_context = build_report_context(&flagged_results);
+            let (summary, ai_generated) = match llm::summarize_fraud_reports(&state.http, &report_context).await {
+                Ok(summary) => (summary, true),
+                Err(err) => {
+                    tracing::warn!("Failed to generate fraud report summary with AI: {}", err);
+                    (fallback, false)
+                }
+            };
+            FraudReportSummaryResponse {
+                report_count: flagged_results.len(),
+                ai_generated,
+                railtracks_generated: false,
+                common_vulnerabilities: summary.common_vulnerabilities,
+                potential_reasons: summary.potential_reasons,
+                improvement_advice: summary.improvement_advice,
+                disclaimer: summary.disclaimer,
+            }
+        }
+    } else {
         FraudReportSummaryResponse {
             report_count: 0,
             ai_generated: false,
+            railtracks_generated: false,
             common_vulnerabilities: fallback.common_vulnerabilities,
             potential_reasons: fallback.potential_reasons,
             improvement_advice: fallback.improvement_advice,
             disclaimer: fallback.disclaimer,
-        }
-    } else {
-        let report_context = build_report_context(&flagged_results);
-        let (summary, ai_generated) = match llm::summarize_fraud_reports(&state.http, &report_context).await {
-            Ok(summary) => (summary, true),
-            Err(err) => {
-                tracing::warn!("Failed to generate fraud report summary with AI: {}", err);
-                (fallback, false)
-            }
-        };
-        FraudReportSummaryResponse {
-            report_count: flagged_results.len(),
-            ai_generated,
-            common_vulnerabilities: summary.common_vulnerabilities,
-            potential_reasons: summary.potential_reasons,
-            improvement_advice: summary.improvement_advice,
-            disclaimer: summary.disclaimer,
         }
     };
 
@@ -277,4 +306,114 @@ fn contains_rule(result: &FraudResult, keywords: &[&str]) -> bool {
         let normalized = rule.to_ascii_lowercase();
         keywords.iter().any(|keyword| normalized.contains(keyword))
     })
+}
+
+/// Call the AI sidecar agent-scan (Railtracks pipeline) and map the FraudReport to summary content.
+/// Returns None if the service is unavailable or the request fails.
+async fn try_railtracks_summary(
+    state: &AppState,
+    transactions: &[ScoringTx],
+) -> Option<(FraudReportSummaryContent, usize)> {
+    if transactions.is_empty() {
+        return None;
+    }
+    let url = format!("{}/agent-scan", ai_base_url().trim_end_matches('/'));
+    let body: Vec<serde_json::Value> = transactions
+        .iter()
+        .map(|tx| {
+            serde_json::json!({
+                "transaction_id": tx.transaction_id,
+                "order_id": Option::<String>::None,
+                "customer_id": tx.customer_name,
+                "amount": tx.amount,
+                "cvv_match": tx.cvv_match,
+                "address_match": tx.address_match,
+                "ip_is_vpn": tx.ip_is_vpn,
+                "card_present": tx.card_present,
+                "timestamp": Option::<String>::None
+            })
+        })
+        .collect();
+    let payload = serde_json::json!({ "transactions": body });
+    let resp = state.http.post(&url).json(&payload).send().await.ok()?;
+    if !resp.status().is_success() {
+        return None;
+    }
+    let agent: AgentScanResponse = resp.json().await.ok()?;
+    let report_count = agent.anomalous_transaction_ids.len().max(1);
+    let mut common_vulnerabilities = vec![agent.summary.clone()];
+    if agent.benford_suspicious {
+        common_vulnerabilities.push(
+            "Benford's Law flagged suspicious digit distribution.".to_string(),
+        );
+    }
+    if agent.duplicate_groups_count > 0 {
+        common_vulnerabilities.push(format!(
+            "{} duplicate invoice group(s) detected.",
+            agent.duplicate_groups_count
+        ));
+    }
+    if !agent.anomalous_transaction_ids.is_empty() {
+        let ids: String = agent
+            .anomalous_transaction_ids
+            .iter()
+            .take(10)
+            .cloned()
+            .collect::<Vec<_>>()
+            .join(", ");
+        let more = if agent.anomalous_transaction_ids.len() > 10 {
+            "..."
+        } else {
+            ""
+        };
+        common_vulnerabilities.push(format!("Anomalous transaction IDs: {}{}", ids, more));
+    }
+    if !agent.graph_flagged_ids.is_empty() {
+        let ids: String = agent
+            .graph_flagged_ids
+            .iter()
+            .take(10)
+            .cloned()
+            .collect::<Vec<_>>()
+            .join(", ");
+        let more = if agent.graph_flagged_ids.len() > 10 {
+            "..."
+        } else {
+            ""
+        };
+        common_vulnerabilities.push(format!("Graph-flagged transaction IDs: {}{}", ids, more));
+    }
+    if let Some(ref s) = agent.graph_summary {
+        if !s.is_empty() {
+            common_vulnerabilities.push(format!("Graph analysis: {}", s));
+        }
+    }
+    if let Some(ref level) = agent.document_risk_level {
+        if !level.is_empty() && level != "LOW" {
+            common_vulnerabilities.push(format!("Document (VLM) risk level: {}", level));
+        }
+    }
+    if !agent.document_signals.is_empty() {
+        common_vulnerabilities.push(format!(
+            "Document fraud signals: {}",
+            agent.document_signals.join("; ")
+        ));
+    }
+    if let Some(ref s) = agent.document_summary {
+        if !s.is_empty() {
+            common_vulnerabilities.push(s.clone());
+        }
+    }
+    if let Some(ref s) = agent.review_notes {
+        if !s.is_empty() {
+            common_vulnerabilities.push(format!("Review note: {}", s));
+        }
+    }
+    let content = FraudReportSummaryContent {
+        common_vulnerabilities,
+        potential_reasons: vec![agent.summary],
+        improvement_advice: agent.recommendations,
+        disclaimer: "AI-generated summaries (Railtracks) may be imprecise and should be reviewed by an analyst before making operational decisions.".to_string(),
+    };
+    Some((content, report_count))
 }

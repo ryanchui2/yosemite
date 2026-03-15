@@ -8,12 +8,13 @@ import { Button } from "@/components/ui/button";
 import { ProtectionScore } from "@/components/ProtectionScore";
 import { FlaggedTransactions } from "@/components/FlaggedTransactions";
 import { RiskOverview } from "@/components/RiskOverview";
-import { scanSanctions, scanAnomalies, analyzeGeoRisk, fetchCachedFraudScan, fetchFraudReportSummary, saveCsvData, fetchSavedCsvList, saveEntityList, fetchSavedEntityList } from "@/lib/api";
-import type { SanctionsResponse, AnomaliesResponse, GeoRiskResponse, FraudScanResponse, FraudReportSummary, SavedCsvData, AnomalyResult, SavedEntityData } from "@/lib/api";
+import { FraudAgentProgress } from "@/components/FraudAgentProgress";
+import { scanSanctions, scanAnomalies, analyzeGeoRisk, fetchCachedFraudScan, fetchFraudReportSummary, fetchTransactions, agentScan, saveCsvData, fetchSavedCsvList, saveEntityList, fetchSavedEntityList } from "@/lib/api";
+import type { SanctionsResponse, AnomaliesResponse, GeoRiskResponse, FraudScanResponse, FraudReportSummary, AgentScanReport, SavedCsvData, AnomalyResult, SavedEntityData } from "@/lib/api";
 import { AlertTriangle, Globe, Shield, Upload, Cuboid, Drama, Ship } from "lucide-react";
 import Image from "next/image";
 
-type SidebarTab = "overview" | "anomaly" | "geosanctions";
+type SidebarTab = "overview" | "anomaly" | "geosanctions" | "aifraud";
 
 /** RFC 4180-compliant CSV line parser — handles quoted fields with embedded commas. */
 function parseCSVLine(line: string): string[] {
@@ -121,6 +122,8 @@ export default function Dashboard() {
   const [fraudScanData, setFraudScanData] = useState<FraudScanResponse | null>(null);
   const [fraudReportSummary, setFraudReportSummary] = useState<FraudReportSummary | null>(null);
   const [fraudScanLoading, setFraudScanLoading] = useState(true);
+  const [agentScanReport, setAgentScanReport] = useState<AgentScanReport | null>(null);
+  const [agentScanLoading, setAgentScanLoading] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -152,6 +155,37 @@ export default function Dashboard() {
 
   const fraudResults = fraudScanData?.results ?? [];
   const totalScanned = fraudScanData?.total_scanned ?? 0;
+
+  async function handleRunAgentScan() {
+    setAgentScanLoading(true);
+    setError(null);
+    setAgentScanReport(null);
+    try {
+      const transactions = await fetchTransactions();
+      if (transactions.length === 0) {
+        setError("No transactions in the database. Add transactions first.");
+        return;
+      }
+      const payload = transactions.map((t) => ({
+        transaction_id: t.transaction_id,
+        order_id: t.order_id,
+        customer_id: t.customer_id ?? t.customer_name,
+        amount: t.amount,
+        cvv_match: t.cvv_match,
+        address_match: t.address_match,
+        ip_is_vpn: t.ip_is_vpn,
+        card_present: t.card_present,
+        timestamp: t.timestamp,
+      }));
+      const report = await agentScan(payload);
+      setAgentScanReport(report);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Agent scan failed.");
+      setAgentScanReport(null);
+    } finally {
+      setAgentScanLoading(false);
+    }
+  }
 
   // Protection score from anomaly detector, geo & sanctions (not fraud scan)
   const protectionScore = (() => {
@@ -630,6 +664,7 @@ export default function Dashboard() {
     { id: "overview", label: "overview", icon: <Cuboid className="h-4 w-4" /> },
     { id: "anomaly", label: "anomaly detector", icon: <Drama className="h-4 w-4" /> },
     { id: "geosanctions", label: "geo & sanctions", icon: <Ship className="h-4 w-4" /> },
+    { id: "aifraud", label: "AI fraud analysis", icon: <AlertTriangle className="h-4 w-4" /> },
   ];
 
   return (
@@ -703,6 +738,88 @@ export default function Dashboard() {
                       summary={fraudReportSummary}
                     />
                   )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ─── AI FRAUD ANALYSIS TAB ─── */}
+          {activeTab === "aifraud" && (
+            <div className="space-y-6">
+              <div className="bg-card border border-border p-6 space-y-4">
+                <p className="text-[10px] font-medium text-muted-foreground tracking-[0.2em] uppercase">
+                  Full AI fraud analysis
+                </p>
+                <p className="text-sm text-foreground/80">
+                  Run the multi-agent pipeline (anomaly detection, Benford&apos;s Law, duplicate detection, graph analysis) on all transactions in the database.
+                </p>
+                <div className="grid grid-cols-1 lg:grid-cols-[1fr,280px] gap-4 items-start">
+                  <div className="space-y-4">
+                    <Button
+                      onClick={handleRunAgentScan}
+                      disabled={agentScanLoading}
+                      className="font-mono text-xs"
+                    >
+                      {agentScanLoading ? "Running analysis…" : "Run full AI fraud analysis"}
+                    </Button>
+
+                    {agentScanReport && (
+                      <div className="border border-border mt-4 p-4 space-y-3 text-sm">
+                        <p className="text-[10px] font-medium text-muted-foreground tracking-[0.2em] uppercase">
+                          Report
+                        </p>
+                        <p className="font-medium capitalize text-foreground">
+                          Risk level: {agentScanReport.risk_level}
+                        </p>
+                        <p className="text-foreground/90 leading-relaxed">{agentScanReport.summary}</p>
+                        {agentScanReport.anomalous_transaction_ids.length > 0 && (
+                          <p className="text-xs font-mono text-muted-foreground">
+                            Anomalous IDs: {agentScanReport.anomalous_transaction_ids.slice(0, 15).join(", ")}
+                            {agentScanReport.anomalous_transaction_ids.length > 15 ? "…" : ""}
+                          </p>
+                        )}
+                        <div className="flex flex-wrap gap-2 text-xs">
+                          {agentScanReport.benford_suspicious && (
+                            <span className="border border-amber-500/50 px-2 py-1 text-amber-700 dark:text-amber-400">Benford suspicious</span>
+                          )}
+                          {agentScanReport.duplicate_groups_count > 0 && (
+                            <span className="border border-amber-500/50 px-2 py-1 text-amber-700 dark:text-amber-400">
+                              {agentScanReport.duplicate_groups_count} duplicate group(s)
+                            </span>
+                          )}
+                          {agentScanReport.graph_flagged_ids && agentScanReport.graph_flagged_ids.length > 0 && (
+                            <span className="border border-amber-500/50 px-2 py-1 text-amber-700 dark:text-amber-400">
+                              Graph: {agentScanReport.graph_flagged_ids.length} flagged
+                            </span>
+                          )}
+                          {agentScanReport.document_risk_level && agentScanReport.document_risk_level !== "LOW" && (
+                            <span className="border border-amber-500/50 px-2 py-1 text-amber-700 dark:text-amber-400">
+                              Document (VLM): {agentScanReport.document_risk_level}
+                            </span>
+                          )}
+                        </div>
+                        {agentScanReport.graph_summary && (
+                          <p className="text-xs text-muted-foreground">{agentScanReport.graph_summary}</p>
+                        )}
+                        {agentScanReport.document_summary && (
+                          <p className="text-xs text-muted-foreground">{agentScanReport.document_summary}</p>
+                        )}
+                        {agentScanReport.review_notes && (
+                          <p className="text-xs border-l-2 border-amber-500/50 pl-2 text-foreground/80 italic">
+                            Review: {agentScanReport.review_notes}
+                          </p>
+                        )}
+                        {agentScanReport.recommendations.length > 0 && (
+                          <ul className="list-disc list-inside space-y-1 text-foreground/80">
+                            {agentScanReport.recommendations.map((rec, i) => (
+                              <li key={i}>{rec}</li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <FraudAgentProgress loading={agentScanLoading} report={agentScanReport} />
                 </div>
               </div>
             </div>

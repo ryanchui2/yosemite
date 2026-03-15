@@ -29,6 +29,28 @@ export interface FraudReportSummary {
   disclaimer: string;
 }
 
+/** Agent-scan result (FraudReport from AI sidecar). */
+export interface AgentScanReport {
+  risk_level: "low" | "medium" | "high" | "critical";
+  summary: string;
+  anomalous_transaction_ids: string[];
+  benford_suspicious: boolean;
+  duplicate_groups_count: number;
+  recommendations: string[];
+  /** Transaction IDs flagged by graph analysis (ensemble pipeline). */
+  graph_flagged_ids?: string[];
+  /** One-line summary from the graph/GNN agent. */
+  graph_summary?: string | null;
+  /** Risk level from VLM document analysis. */
+  document_risk_level?: string | null;
+  /** Fraud signals from VLM document analysis. */
+  document_signals?: string[];
+  /** Summary from VLM document analysis. */
+  document_summary?: string | null;
+  /** Optional second-pass review notes from the reviewer agent. */
+  review_notes?: string | null;
+}
+
 export interface Transaction {
   transaction_id: string;
   order_id: string | null;
@@ -80,6 +102,35 @@ export async function scanFraud(
 export async function fetchFraudReportSummary(): Promise<FraudReportSummary> {
   const res = await fetch(`${BACKEND_URL}/api/fraud/report/summary`);
   if (!res.ok) throw new Error(`Fraud report summary failed: ${res.status}`);
+  return res.json();
+}
+
+/** Run full AI fraud analysis (Railtracks pipeline) on a transaction batch. */
+export async function agentScan(
+  transactions: Array<{
+    transaction_id: string;
+    order_id?: string | null;
+    customer_id?: string | null;
+    amount?: number | null;
+    cvv_match?: boolean | null;
+    address_match?: boolean | null;
+    ip_is_vpn?: boolean | null;
+    card_present?: boolean | null;
+    timestamp?: string | null;
+  }>,
+): Promise<AgentScanReport> {
+  const res = await fetch(`${BACKEND_URL}/api/fraud/agent-scan`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ transactions }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    const o = err as { error?: string; detail?: string };
+    throw new Error(
+      o.detail || o.error || `Agent scan failed: ${res.status}`,
+    );
+  }
   return res.json();
 }
 

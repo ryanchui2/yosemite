@@ -28,11 +28,11 @@ function buildFallbackSummary(results: FraudResult[], totalScanned: number): Fra
     ai_generated: false,
     common_vulnerabilities: results.length
       ? [
-          `${flaggedPct}% of scanned transactions are currently flagged for review.`,
-          topRules.length
-            ? `Recurring fraud signals include ${topRules.join(" and ")}.`
-            : "Recurring fraud signals are present across the flagged transaction set.",
-        ]
+        `${flaggedPct}% of scanned transactions are currently flagged for review.`,
+        topRules.length
+          ? `Recurring fraud signals include ${topRules.join(" and ")}.`
+          : "Recurring fraud signals are present across the flagged transaction set.",
+      ]
       : ["No suspicious transactions were detected in the latest fraud scan."],
     potential_reasons: results.length
       ? ["The current pattern suggests weak verification, risky payment context, or repeated rule-trigger combinations."]

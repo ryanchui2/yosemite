@@ -7,3 +7,4 @@ railtracks
 railtracks-cli
 python-dotenv
 httpx
+networkx

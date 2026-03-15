@@ -169,10 +169,42 @@ pub struct FraudReportSummaryContent {
 pub struct FraudReportSummaryResponse {
     pub report_count: usize,
     pub ai_generated: bool,
+    /// When true, the summary was produced by the Railtracks agent pipeline (multi-agent fraud analysis).
+    #[serde(default)]
+    pub railtracks_generated: bool,
     pub common_vulnerabilities: Vec<String>,
     pub potential_reasons: Vec<String>,
     pub improvement_advice: Vec<String>,
     pub disclaimer: String,
+}
+
+/// Response from the AI sidecar /agent-scan (Railtracks FraudReport).
+#[derive(Debug, Deserialize)]
+pub struct AgentScanResponse {
+    pub risk_level: String,
+    pub summary: String,
+    pub anomalous_transaction_ids: Vec<String>,
+    pub benford_suspicious: bool,
+    pub duplicate_groups_count: u32,
+    pub recommendations: Vec<String>,
+    /// Transaction IDs flagged by graph analysis (ensemble pipeline).
+    #[serde(default)]
+    pub graph_flagged_ids: Vec<String>,
+    /// One-line summary from the graph/GNN agent.
+    #[serde(default)]
+    pub graph_summary: Option<String>,
+    /// Risk level from VLM document analysis when a document was analyzed.
+    #[serde(default)]
+    pub document_risk_level: Option<String>,
+    /// Fraud signals from VLM document analysis.
+    #[serde(default)]
+    pub document_signals: Vec<String>,
+    /// Summary from VLM document analysis.
+    #[serde(default)]
+    pub document_summary: Option<String>,
+    /// Optional second-pass review notes from the reviewer/critic agent.
+    #[serde(default)]
+    pub review_notes: Option<String>,
 }
 
 // ── Geopolitical Risk ─────────────────────────────────────────────────────────

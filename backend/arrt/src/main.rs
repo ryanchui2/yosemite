@@ -34,6 +34,7 @@ async fn main() {
 
     tracing::info!("Connected to database");
 
+    // Migrations are embedded at compile time; add new .sql in backend/arrt/migrations/
     sqlx::migrate!("./migrations")
         .run(&pool)
         .await

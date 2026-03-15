@@ -6,12 +6,12 @@ three fraud detection tools to call (and in what order) based on the
 transaction batch it receives. It returns a structured FraudReport object.
 """
 
-from typing import List, Literal
+from typing import List, Literal, Optional
 
 import railtracks as rt
 from pydantic import BaseModel, Field
 
-from ._llm import make_llm
+from ._llm import make_llm, make_llm_coordinator
 from .tools import run_anomaly_scoring, run_benford_analysis, run_duplicate_detection
 
 
@@ -34,6 +34,35 @@ class FraudReport(BaseModel):
     recommendations: List[str] = Field(
         description="Actionable recommendations for the fraud analyst, one per list item."
     )
+    graph_flagged_ids: Optional[List[str]] = Field(
+        default_factory=list,
+        description="Transaction IDs flagged by graph analysis (large/dense components or high-degree nodes).",
+    )
+    graph_summary: Optional[str] = Field(
+        default=None,
+        description="One-line summary from the graph/GNN agent.",
+    )
+    document_risk_level: Optional[str] = Field(
+        default=None,
+        description="Risk level from VLM document analysis (HIGH/MEDIUM/LOW) when a document was analyzed.",
+    )
+    document_signals: Optional[List[str]] = Field(
+        default_factory=list,
+        description="Fraud signals from VLM document analysis.",
+    )
+    document_summary: Optional[str] = Field(
+        default=None,
+        description="Summary from VLM document analysis.",
+    )
+    review_notes: Optional[str] = Field(
+        default=None,
+        description="Optional second-pass review notes from the reviewer/critic agent.",
+    )
+
+
+class ReviewNotes(BaseModel):
+    """Output of the fraud reviewer agent."""
+    review_notes: str = Field(description="Short review or escalation note from the critic agent.")
 
 
 fraud_analyst = rt.agent_node(
@@ -58,5 +87,37 @@ fraud_analyst = rt.agent_node(
         "(false if sufficient_data is false).\n"
         "- duplicate_groups_count: the total_duplicate_groups value.\n"
         "- recommendations: specific, actionable next steps (freeze accounts, manual review, etc.)."
+    ),
+)
+
+# Synthesis-only agent: no tools. Used when tool results are precomputed so the LLM
+# cannot skip running them. Caller overwrites anomalous_transaction_ids,
+# benford_suspicious, duplicate_groups_count from the actual tool outputs.
+fraud_synthesizer = rt.agent_node(
+    name="FraudSynthesizer",
+    tool_nodes=[],  # No tools — prompt already contains tool results
+    llm=make_llm_coordinator(),
+    output_schema=FraudReport,
+    system_message=(
+        "You are an expert invoice fraud analyst. You will be given the precomputed "
+        "outputs of three fraud detection tools (anomaly scoring, Benford's Law, "
+        "duplicate detection) for a transaction batch. Your job is to synthesize "
+        "these results into a FraudReport.\n\n"
+        "Output a FraudReport with:\n"
+        "- risk_level: 'low' if no concerning signals, 'medium' if one mild signal, "
+        "'high' if anomalies or duplicates are present, 'critical' if multiple strong "
+        "signals overlap.\n"
+        "- summary: 2-3 sentence summary of what the tool results show (anomalies, "
+        "Benford deviation, duplicate groups). Do not say no analysis was performed — "
+        "the results below are the analysis.\n"
+        "- anomalous_transaction_ids: copy the list of anomalous transaction IDs from "
+        "the anomaly scoring result (IDs with high anomaly_score).\n"
+        "- benford_suspicious: true only if the Benford result has sufficient_data and "
+        "is_suspicious true; otherwise false.\n"
+        "- duplicate_groups_count: the total_duplicate_groups value from the duplicate "
+        "detection result.\n"
+        "- graph_flagged_ids: the flagged_transaction_ids from the graph analysis result (if present).\n"
+        "- graph_summary: the summary from the graph analysis result (if present).\n"
+        "- recommendations: specific, actionable next steps based on the findings."
     ),
 )
