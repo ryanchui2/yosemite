@@ -152,9 +152,30 @@ export default function Dashboard() {
 
   const fraudResults = fraudScanData?.results ?? [];
   const totalScanned = fraudScanData?.total_scanned ?? 0;
-  const protectionScore = totalScanned === 0
-    ? 100
-    : Math.round(Math.max(0, 100 - (fraudScanData!.flagged / totalScanned) * 100));
+
+  // Protection score from anomaly detector, geo & sanctions (not fraud scan)
+  const protectionScore = (() => {
+    const components: number[] = [];
+    if (anomaliesData && anomaliesData.total_transactions > 0) {
+      const pct = (anomaliesData.flagged / anomaliesData.total_transactions) * 100;
+      components.push(Math.max(0, 100 - pct));
+    }
+    if (sanctionsData && sanctionsData.total_entities > 0) {
+      const pct = (sanctionsData.flagged / sanctionsData.total_entities) * 100;
+      components.push(Math.max(0, 100 - pct));
+    }
+    if (geoRiskData && geoRiskData.results.length > 0) {
+      const geoFlagged = geoRiskData.results.filter(
+        (r) => r.risk_level === "CRITICAL" || r.risk_level === "HIGH"
+      ).length;
+      const pct = (geoFlagged / geoRiskData.results.length) * 100;
+      components.push(Math.max(0, 100 - pct));
+    }
+    if (components.length === 0) return 100;
+    return Math.round(
+      components.reduce((a, b) => a + b, 0) / components.length
+    );
+  })();
 
   const [sanctionsLoading, setSanctionsLoading] = useState(false);
   const [anomaliesLoading, setAnomaliesLoading] = useState(false);

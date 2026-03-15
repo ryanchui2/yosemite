@@ -61,12 +61,37 @@ pub async fn summary(State(state): State<AppState>) -> Json<FraudReportSummaryRe
         .await
         .unwrap_or_default();
 
+    // Fetch all fraud reports to merge them into the summary context
+    let reports = sqlx::query!(
+        "SELECT transaction_id, confirmed_fraud, notes, ai_review_notes FROM fraud_reports"
+    )
+    .fetch_all(&state.db)
+    .await
+    .unwrap_or_default();
+
+    let mut report_map = HashMap::new();
+    for row in reports {
+        report_map.insert(
+            row.transaction_id,
+            (row.confirmed_fraud, row.notes, row.ai_review_notes),
+        );
+    }
+
     let mut flagged_results = transactions
         .iter()
         .filter_map(|tx| {
-            let (risk_score, triggered_rules) = fraud_rules::score(tx);
-            if risk_score == 0 {
+            let (mut risk_score, triggered_rules) = fraud_rules::score(tx);
+            let in_report = report_map.get(&tx.transaction_id);
+
+            if risk_score == 0 && in_report.is_none() {
                 return None;
+            }
+
+            // Override with fraud report details to guarantee inclusion in summary
+            if let Some((confirmed_fraud, _, _)) = in_report {
+                if *confirmed_fraud {
+                    risk_score = 100;
+                }
             }
 
             Some(FraudResult {
