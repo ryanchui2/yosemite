@@ -8,12 +8,12 @@ import { Button } from "@/components/ui/button";
 import { ProtectionScore } from "@/components/ProtectionScore";
 import { FlaggedTransactions } from "@/components/FlaggedTransactions";
 import { RiskOverview } from "@/components/RiskOverview";
-import { scanSanctions, scanAnomalies, analyzeGeoRisk, scanFraud, fetchFraudReportSummary } from "@/lib/api";
-import type { SanctionsResponse, AnomaliesResponse, GeoRiskResponse, FraudScanResponse, FraudReportSummary } from "@/lib/api";
-import { AlertTriangle, Globe, Shield, Upload } from "lucide-react";
+import { scanSanctions, scanAnomalies, scanFraud, fetchFraudReportSummary } from "@/lib/api";
+import type { SanctionsResponse, AnomaliesResponse, FraudScanResponse, FraudReportSummary } from "@/lib/api";
+import { AlertTriangle, Shield, Upload } from "lucide-react";
 import Image from "next/image";
 
-type Report = "anomalies" | "sanctions" | "georisk";
+type Report = "anomalies" | "sanctions";
 
 function parseCSV(text: string): { headers: string[]; rows: Record<string, string>[] } {
   const lines = text.trim().split(/\r?\n/);
@@ -96,7 +96,6 @@ export default function Dashboard() {
 
   const [sanctionsData, setSanctionsData] = useState<SanctionsResponse | null>(null);
   const [anomaliesData, setAnomaliesData] = useState<AnomaliesResponse | null>(null);
-  const [geoRiskData, setGeoRiskData] = useState<GeoRiskResponse | null>(null);
   const [fraudScanData, setFraudScanData] = useState<FraudScanResponse | null>(null);
   const [fraudReportSummary, setFraudReportSummary] = useState<FraudReportSummary | null>(null);
   const [fraudScanLoading, setFraudScanLoading] = useState(true);
@@ -139,7 +138,6 @@ export default function Dashboard() {
 
   const [sanctionsLoading, setSanctionsLoading] = useState(false);
   const [anomaliesLoading, setAnomaliesLoading] = useState(false);
-  const [geoRiskLoading, setGeoRiskLoading] = useState(false);
 
   const [csvHeaders, setCsvHeaders] = useState<string[]>([]);
   const [csvRows, setCsvRows] = useState<Record<string, string>[]>([]);
@@ -172,7 +170,6 @@ export default function Dashboard() {
   const [manualEntities, setManualEntities] = useState<{ description: string; country: string }[]>([]);
   const [manualInput, setManualInput] = useState({ description: "", country: "" });
 
-  const [geoCountries, setGeoCountries] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   function handleAnomalyFile(file: File) {
@@ -291,26 +288,9 @@ export default function Dashboard() {
     }
   }
 
-  async function handleGeoRisk() {
-    const countries = geoCountries.split(",").map((c) => c.trim()).filter(Boolean);
-    if (!countries.length) return;
-    setGeoRiskLoading(true);
-    setError(null);
-    try {
-      const data = await analyzeGeoRisk(countries);
-      setGeoRiskData(data);
-      setActiveReport("georisk");
-    } catch {
-      setError("Geo risk analysis failed. Is the backend running?");
-    } finally {
-      setGeoRiskLoading(false);
-    }
-  }
-
   const reportTabs: { id: Report; label: string }[] = [
     { id: "anomalies", label: "Anomaly Report" },
     { id: "sanctions", label: "Sanctions Report" },
-    { id: "georisk", label: "Geo Risk Report" },
   ];
 
   return (
@@ -321,8 +301,8 @@ export default function Dashboard() {
           <Image src="/yosemite_logo.png" alt="yosemite logo" width={32} height={32} className="rounded-xl" />
           <span className="text-[17px] font-semibold tracking-tight text-gray-900" style={{ fontFamily: "var(--font-space-grotesk)" }}>yosemite</span>
         </div>
-        {(sanctionsData || anomaliesData || geoRiskData) && (
-          <PDFExport sanctionsData={sanctionsData} anomaliesData={anomaliesData} geoRiskData={geoRiskData} />
+        {(sanctionsData || anomaliesData) && (
+          <PDFExport sanctionsData={sanctionsData} anomaliesData={anomaliesData} />
         )}
       </header>
 
@@ -373,8 +353,8 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Row 1: three action cards */}
-      <div className="grid grid-cols-3 gap-4">
+      {/* Row 1: two action cards */}
+      <div className="grid grid-cols-2 gap-4">
 
         {/* Card 1: Anomaly Detector */}
         <div className="bg-card rounded-[2rem] p-6 shadow-card-soft space-y-5 border border-white/50">
@@ -691,34 +671,6 @@ export default function Dashboard() {
           </Button>
         </div>
 
-        {/* Card 3: Geopolitical Monitor */}
-        <div className="bg-card rounded-[2rem] p-6 shadow-card-soft space-y-5 border border-white/50">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-2xl bg-purple-100 shadow-inner flex items-center justify-center">
-              <Globe className="h-5 w-5 text-purple-500 drop-shadow-sm" />
-            </div>
-            <div>
-              <p className="text-base font-bold text-foreground">Geopolitical Monitor</p>
-              <p className="text-xs text-muted-foreground">Country risk</p>
-            </div>
-          </div>
-
-          <textarea
-            value={geoCountries}
-            onChange={(e) => setGeoCountries(e.target.value)}
-            placeholder="Myanmar, Nigeria, Turkey"
-            rows={3}
-            className="w-full rounded-2xl border-none bg-background/50 shadow-inner px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground resize-none focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
-          />
-
-          <Button
-            className="w-full rounded-xl bg-purple-500 hover:bg-purple-600 text-white text-sm"
-            disabled={geoRiskLoading || !geoCountries.trim()}
-            onClick={handleGeoRisk}
-          >
-            {geoRiskLoading ? "Analyzing…" : "Analyze Risk"}
-          </Button>
-        </div>
       </div>
 
       {/* Row 2: Report card */}
@@ -783,19 +735,6 @@ export default function Dashboard() {
             </div>
           )}
 
-          {/* Geo risk report */}
-          {activeReport === "georisk" && (
-            <div>
-              {geoRiskData ? (
-                <ResultsTable type="georisk" data={geoRiskData} />
-              ) : (
-                <div className="py-16 text-center text-gray-400">
-                  <Globe className="h-8 w-8 mx-auto mb-3 opacity-30" />
-                  <p className="text-sm">Enter countries in the Geopolitical Monitor card and analyze to see results here.</p>
-                </div>
-              )}
-            </div>
-          )}
         </div>
       </div>
     </div>

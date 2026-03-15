@@ -10,6 +10,9 @@ pub struct SanctionsScanResult {
     pub reason: String,
     pub ai_explanation: String,
     pub action: String,
+    pub geo_risk_score: Option<u32>,
+    pub geo_risk_level: Option<String>,
+    pub geo_briefing: Option<String>,
 }
 
 #[derive(Serialize)]
