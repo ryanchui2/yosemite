@@ -185,8 +185,12 @@ function DropZone({
 }
 
 export default function Dashboard() {
-  const { user, logout } = useAuth();
+  const { user, login, logout } = useAuth();
   const [activeTab, setActiveTab] = useState<SidebarTab>("overview");
+  const [loginEmail, setLoginEmail] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const [loginLoading, setLoginLoading] = useState(false);
 
   const [sanctionsData, setSanctionsData] = useState<SanctionsResponse | null>(
     null,
@@ -926,16 +930,65 @@ export default function Dashboard() {
             />
           )}
           <div className="flex items-center gap-2 border border-foreground/20 px-3 py-1.5">
-            <span className="text-[10px] tracking-wider text-muted-foreground">
-              {user?.email}
-            </span>
-            <button
-              onClick={logout}
-              title="Sign out"
-              className="text-muted-foreground hover:text-foreground transition-colors"
-            >
-              <LogOut size={12} />
-            </button>
+            {user ? (
+              <>
+                <span className="text-[10px] tracking-wider text-muted-foreground">
+                  {user.email}
+                </span>
+                <button
+                  onClick={logout}
+                  title="Sign out"
+                  className="text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  <LogOut size={12} />
+                </button>
+              </>
+            ) : (
+              <form
+                className="flex items-center gap-2"
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  setLoginError(null);
+                  setLoginLoading(true);
+                  try {
+                    await login(loginEmail, loginPassword);
+                    setLoginEmail("");
+                    setLoginPassword("");
+                  } catch (err) {
+                    setLoginError(err instanceof Error ? err.message : "Login failed");
+                  } finally {
+                    setLoginLoading(false);
+                  }
+                }}
+              >
+                <input
+                  type="email"
+                  placeholder="Email"
+                  value={loginEmail}
+                  onChange={(e) => setLoginEmail(e.target.value)}
+                  className="text-[10px] w-32 px-2 py-1 border border-border bg-background text-foreground rounded"
+                  required
+                />
+                <input
+                  type="password"
+                  placeholder="Password"
+                  value={loginPassword}
+                  onChange={(e) => setLoginPassword(e.target.value)}
+                  className="text-[10px] w-24 px-2 py-1 border border-border bg-background text-foreground rounded"
+                  required
+                />
+                <button
+                  type="submit"
+                  disabled={loginLoading}
+                  className="text-[10px] px-2 py-1 border border-foreground/40 hover:bg-foreground/10 rounded"
+                >
+                  {loginLoading ? "…" : "Sign in"}
+                </button>
+                {loginError && (
+                  <span className="text-[10px] text-destructive">{loginError}</span>
+                )}
+              </form>
+            )}
           </div>
         </div>
       </header>
