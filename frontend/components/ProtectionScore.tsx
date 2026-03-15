@@ -21,20 +21,20 @@ export function ProtectionScore({ score }: Props) {
   const accent = s >= 75 ? "#22c55e" : s >= 50 ? "#f59e0b" : "#ef4444";
 
   return (
-    <div className="flex flex-col items-center justify-center gap-2 h-full select-none">
+    <div className="flex flex-col items-center gap-2 select-none">
       <p className="text-[10px] font-medium text-muted-foreground tracking-[0.2em] uppercase">
         Protection Score
       </p>
 
       {/* 3-D scene */}
-      <div style={{ width: 248, height: 248 }}>
+      <div style={{ width: 340, height: 340 }}>
         <LiquidHexScene score={s} />
       </div>
 
       {/* Score */}
-      <div className="flex items-baseline gap-1">
-        <span className="text-3xl font-bold text-foreground tabular-nums">{s}</span>
-        <span className="text-sm text-muted-foreground font-mono">/ 100</span>
+      <div className="flex items-baseline gap-1.5">
+        <span className="text-4xl font-bold text-foreground tabular-nums">{s}</span>
+        <span className="text-base text-muted-foreground font-mono">/ 100</span>
       </div>
 
       {/* Rating label */}

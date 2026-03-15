@@ -664,7 +664,7 @@ export default function Dashboard() {
             <div className="space-y-6">
               <div className="grid grid-cols-2 gap-px bg-border">
                 {/* Protection Score */}
-                <div className="bg-card p-8 flex items-center justify-center aspect-[4/3]">
+                <div className="bg-card p-8 flex justify-center">
                   {fraudScanLoading ? (
                     <p className="text-xs text-muted-foreground animate-pulse font-mono">Scanning...</p>
                   ) : (
@@ -672,7 +672,7 @@ export default function Dashboard() {
                   )}
                 </div>
                 {/* Risk Overview */}
-                <div className="bg-card p-6 flex flex-col aspect-[4/3]">
+                <div className="bg-card p-6 flex flex-col">
                   {fraudScanLoading ? (
                     <p className="text-xs text-muted-foreground animate-pulse font-mono">Analyzing...</p>
                   ) : (
