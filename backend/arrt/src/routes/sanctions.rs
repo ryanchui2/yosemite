@@ -130,15 +130,42 @@ pub async fn scan(
         let hits: Vec<SanctionsHit> =
             open_sanctions::search(&state.http, &query, &state.opensanctions_api_key).await;
 
-        let (llm_risk, ai_explanation) = llm::explain_sanctions_entity(&state.http, name, &hits)
+        let (llm_risk_raw, ai_explanation) = llm::explain_sanctions_entity(&state.http, name, &hits)
             .await
-            .unwrap_or_else(|_| ("LOW".to_string(), String::new()));
+            .unwrap_or_else(|e| {
+                tracing::warn!("Sanctions LLM explain failed for entity {:?}: {}", name, e);
+                // When LLM fails, derive risk from OpenSanctions hit scores so a second scan
+                // (e.g. after rate limit) doesn't default every entity to LOW.
+                let fallback = if hits.is_empty() {
+                    "LOW".to_string()
+                } else {
+                    let max_score = hits.iter().map(|h| h.score).fold(0.0_f64, f64::max);
+                    if max_score >= 0.9 {
+                        "HIGH".to_string()
+                    } else if max_score >= 0.7 {
+                        "MEDIUM".to_string()
+                    } else {
+                        "LOW".to_string()
+                    }
+                };
+                (fallback, String::new())
+            });
+        let llm_risk = llm_risk_raw.to_uppercase();
 
-        let geo = country.as_deref().and_then(|c| geo_map.get(c));
+        let geo = country.as_deref().and_then(|c| {
+            geo_map.get(c).or_else(|| {
+                geo_map
+                    .iter()
+                    .find(|(k, _)| k.eq_ignore_ascii_case(c))
+                    .map(|(_, v)| v)
+            })
+        });
         let geo_risk_score = geo.map(|g| g.risk_score);
-        let geo_risk_level = geo.map(|g| g.risk_level.clone());
+        let geo_risk_level = geo.map(|g| g.risk_level.to_uppercase());
         let geo_briefing = geo.map(|g| g.ai_briefing.clone());
-        let geo_level_str = geo.map(|g| g.risk_level.as_str()).unwrap_or("LOW");
+        let geo_level_str = geo
+            .map(|g| g.risk_level.as_str().to_uppercase())
+            .unwrap_or_else(|| "LOW".to_string());
 
         if hits.is_empty() {
             let action = if llm_risk == "LOW" && geo_level_str == "LOW" {
@@ -149,8 +176,8 @@ pub async fn scan(
                 format!("Review — elevated geo risk ({})", geo_level_str)
             };
 
-            // Effective risk incorporates geo signal even with no sanctions hit
-            let effective_risk = match (llm_risk.as_str(), geo_level_str) {
+            // Effective risk incorporates geo signal even with no sanctions hit (case-insensitive)
+            let effective_risk = match (llm_risk.as_str(), geo_level_str.as_str()) {
                 ("HIGH", _) | (_, "HIGH") | (_, "CRITICAL") => "HIGH",
                 ("MEDIUM", _) | (_, "MEDIUM") => "MEDIUM",
                 _ => "LOW",
@@ -178,7 +205,7 @@ pub async fn scan(
                 } else {
                     "LOW"
                 };
-                let effective_risk = match (db_risk, llm_risk.as_str(), geo_level_str) {
+                let effective_risk = match (db_risk, llm_risk.as_str(), geo_level_str.as_str()) {
                     ("HIGH", _, _) | (_, "HIGH", _) | (_, _, "HIGH") | (_, _, "CRITICAL") => "HIGH",
                     ("MEDIUM", _, _) | (_, "MEDIUM", _) | (_, _, "MEDIUM") => "MEDIUM",
                     _ => "LOW",
@@ -200,7 +227,15 @@ pub async fn scan(
         }
     }
 
-    let flagged = results.iter().filter(|r| !r.matched_name.is_empty()).count();
+    let flagged: usize = results
+        .iter()
+        .filter(|r| {
+            let level = r.risk_level.as_str();
+            level == "HIGH" || level == "MEDIUM" || level == "CRITICAL"
+        })
+        .map(|r| r.uploaded_name.clone())
+        .collect::<HashSet<_>>()
+        .len();
     Ok(Json(SanctionsScanResponse {
         scan_id: Uuid::new_v4().to_string(),
         total_entities,

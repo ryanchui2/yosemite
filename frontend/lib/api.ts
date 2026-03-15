@@ -189,6 +189,23 @@ export async function agentScan(
   return res.json();
 }
 
+/** Dashboard stats (transactions, volume, cash flow, top vendors). */
+export interface StatsResponse {
+  total_transactions: number;
+  total_volume: number;
+  last_scan_at: string | null;
+  volume_this_month: number;
+  volume_last_month: number;
+  top_vendors: { name: string; volume: number; transaction_count: number }[];
+}
+
+/** GET /api/stats — key metrics for Overview. */
+export async function fetchStats(): Promise<StatsResponse> {
+  const res = await apiFetch(`${BACKEND_URL}/api/stats`);
+  if (!res.ok) throw new Error(`Stats failed: ${res.status}`);
+  return res.json();
+}
+
 /** Fetch all transactions from the database (optionally with limit for agent scan to get full set). */
 export async function fetchTransactions(options?: { limit?: number }): Promise<Transaction[]> {
   const params = options?.limit != null ? `?limit=${Math.min(options.limit, 500)}` : "";
@@ -441,12 +458,35 @@ export async function scanAnomalies(file: File): Promise<AnomaliesResponse> {
   }
   const pipeline: PipelineResponse = await res.json();
 
+  // #region agent log
+  const amounts = pipeline.results.map((r) => r.amount).filter((a): a is number => a != null);
+  const maxAmount = amounts.length ? Math.max(...amounts) : null;
+  const sumAmount = amounts.reduce((s, a) => s + a, 0);
+  fetch("http://127.0.0.1:7242/ingest/a3ba57d6-4434-4c97-9efb-bd3955e640d5", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      location: "api.ts:scanAnomalies",
+      message: "pipeline response mapped to anomaly results",
+      hypothesisId: ["anomaly_amount"],
+      data: {
+        resultsCount: pipeline.results.length,
+        maxAmount,
+        sumAmount,
+        sampleAmounts: amounts.slice(0, 5),
+        firstResultAmount: pipeline.results[0]?.amount ?? null,
+      },
+      timestamp: Date.now(),
+    }),
+  }).catch(() => { });
+  // #endregion
+
   const mapped: AnomalyResult[] = pipeline.results.map((r, i) => ({
     row_index: i,
     date: r.timestamp ?? new Date().toISOString().split("T")[0],
     vendor: r.customer_name ?? r.transaction_id,
     amount: r.amount ?? 0,
-    anomaly_score: r.risk_score / 100,
+    anomaly_score: Math.min(1, r.risk_score / 100),
     risk_level:
       r.risk_score >= 70 ? "HIGH" : r.risk_score >= 40 ? "MEDIUM" : "LOW",
     reasons: r.triggered_rules,

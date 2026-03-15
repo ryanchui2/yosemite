@@ -11,4 +11,5 @@ pub mod georisk;
 pub mod pipeline;
 pub mod risk;
 pub mod sanctions;
+pub mod stats;
 pub mod transactions;

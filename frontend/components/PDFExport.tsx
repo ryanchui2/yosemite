@@ -35,7 +35,7 @@ export function PDFExport({ sanctionsData, anomaliesData, geoRiskData }: Props) 
       lines.push(`Transactions scanned: ${anomaliesData.total_transactions}  |  Flagged: ${anomaliesData.flagged}`);
       for (const r of anomaliesData.results) {
         lines.push(`\n  ${r.date}  ${r.vendor}  $${r.amount.toLocaleString()}`);
-        lines.push(`  Risk: ${r.risk_level}  |  Score: ${(r.anomaly_score * 100).toFixed(0)}%`);
+        lines.push(`  Risk: ${r.risk_level}  |  Score: ${Math.min(100, r.anomaly_score * 100).toFixed(0)}%`);
         lines.push(`  Reasons: ${r.reasons.join("; ")}`);
       }
       lines.push("");
@@ -84,7 +84,7 @@ export function PDFExport({ sanctionsData, anomaliesData, geoRiskData }: Props) 
       onClick={handleExport}
       className="px-4 py-1.5 text-[10px] tracking-wider border border-border hover:border-foreground/40 text-foreground transition-colors font-medium"
     >
-    report
+      report
     </button>
   );
 }

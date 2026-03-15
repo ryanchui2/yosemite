@@ -4,8 +4,8 @@ use uuid::Uuid;
 
 use crate::auth::middleware::AuthUser;
 use crate::models::fraud::{
-    AgentScanResponse, FraudReportRequest, FraudReportResponse, FraudReportSummaryContent,
-    FraudReportSummaryResponse, FraudResult, ScoringTx,
+    AgentScanResponse, FraudReportRequest, FraudReportResponse, FraudReportRow,
+    FraudReportSummaryContent, FraudReportSummaryResponse, FraudResult, ScoringTx,
 };
 use crate::services::fraud_rules;
 use crate::services::llm;
@@ -66,10 +66,10 @@ pub async fn summary(AuthUser(claims): AuthUser, State(state): State<AppState>) 
         .unwrap_or_default();
 
     // Fetch only this user's fraud reports
-    let reports = sqlx::query!(
+    let reports: Vec<FraudReportRow> = sqlx::query_as::<_, FraudReportRow>(
         "SELECT transaction_id, confirmed_fraud, notes, ai_review_notes FROM fraud_reports WHERE user_id = $1",
-        user_id
     )
+    .bind(user_id)
     .fetch_all(&state.db)
     .await
     .unwrap_or_default();

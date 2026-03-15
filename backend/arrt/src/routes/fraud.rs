@@ -2,7 +2,7 @@ use axum::{extract::State, Json};
 use std::collections::HashMap;
 
 use crate::auth::middleware::AuthUser;
-use crate::models::fraud::{FraudResult, ScanRequest, ScanResponse, ScoringTx};
+use crate::models::fraud::{FraudReportRow, FraudResult, ScanRequest, ScanResponse, ScoringTx};
 use crate::services::{anomaly_service, fraud_rules, llm};
 use crate::state::AppState;
 
@@ -27,8 +27,8 @@ async fn run_scan(state: &AppState, payload: &ScanRequest) -> ScanResponse {
     let anomaly_scores = anomaly_service::get_anomaly_scores(&state.http, &transactions).await;
 
     // Fetch all fraud reports to merge them into the scan results
-    let reports = sqlx::query!(
-        "SELECT transaction_id, confirmed_fraud, notes, ai_review_notes FROM fraud_reports"
+    let reports: Vec<FraudReportRow> = sqlx::query_as::<_, FraudReportRow>(
+        "SELECT transaction_id, confirmed_fraud, notes, ai_review_notes FROM fraud_reports",
     )
     .fetch_all(&state.db)
     .await
@@ -67,9 +67,9 @@ async fn run_scan(state: &AppState, payload: &ScanRequest) -> ScanResponse {
             }
 
             // Prefer AI notes, then fallback to manual notes, then fallback to standard explanation
-            if let Some(n) = ai_notes {
+            if let Some(ref n) = ai_notes {
                 ai_explanation = Some(n.clone());
-            } else if let Some(n) = notes {
+            } else if let Some(ref n) = notes {
                 ai_explanation = Some(n.clone());
             }
         }

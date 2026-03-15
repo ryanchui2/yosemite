@@ -18,7 +18,7 @@ export function ResultsTable(props: Props) {
       <div className="border border-border overflow-hidden">
         <div className="px-4 py-3 border-b border-border flex items-center justify-between">
           <span className="text-xs font-medium text-foreground uppercase tracking-wider">
-            Sanctions Scan Results
+            Sanctions scan results
           </span>
           <span className="text-[10px] text-muted-foreground font-mono">
             {data.flagged} of {data.total_entities} flagged
@@ -30,26 +30,36 @@ export function ResultsTable(props: Props) {
           <table className="w-full text-xs">
             <thead className="bg-accent text-[10px] text-muted-foreground uppercase tracking-wider">
               <tr>
-                <th className="px-4 py-2.5 text-left font-medium">Uploaded Name</th>
-                <th className="px-4 py-2.5 text-left font-medium">Matched Name</th>
-                <th className="px-4 py-2.5 text-left font-medium">Confidence</th>
-                <th className="px-4 py-2.5 text-left font-medium">Risk</th>
-                <th className="px-4 py-2.5 text-left font-medium">List</th>
-                <th className="px-4 py-2.5 text-left font-medium">Action</th>
+                <th className="px-4 py-2.5 text-left font-medium">Entity</th>
+                <th className="px-4 py-2.5 text-left font-medium">Sanctions</th>
+                <th className="px-4 py-2.5 text-left font-medium">Country risk</th>
+                <th className="px-4 py-2.5 text-left font-medium">List / Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
               {data.results.map((r, i) => (
                 <tr key={i} className="hover:bg-accent/50">
                   <td className="px-4 py-3 font-medium text-foreground">{r.uploaded_name}</td>
-                  <td className="px-4 py-3 text-muted-foreground">{r.matched_name}</td>
-                  <td className="px-4 py-3 font-mono">{r.confidence}%</td>
                   <td className="px-4 py-3">
                     <RiskBadge level={r.risk_level} />
                   </td>
-                  <td className="px-4 py-3 text-muted-foreground">{r.sanctions_list}</td>
                   <td className="px-4 py-3">
-                    <div className="text-xs text-foreground/80">{r.action}</div>
+                    {r.geo_risk_level != null ? (
+                      <span className="flex items-center gap-1.5">
+                        <RiskBadge level={r.geo_risk_level} />
+                        {r.geo_risk_score != null && (
+                          <span className="text-muted-foreground font-mono text-[10px]">
+                            {r.geo_risk_score}/100
+                          </span>
+                        )}
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground/60">—</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="text-muted-foreground">{r.sanctions_list || "—"}</div>
+                    <div className="text-[10px] text-foreground/80 mt-0.5">{r.action}</div>
                     <AIExplanationCard explanation={r.ai_explanation} />
                   </td>
                 </tr>
@@ -99,21 +109,19 @@ export function ResultsTable(props: Props) {
                     <div className="flex items-center gap-2">
                       <div className="w-16 bg-accent h-1 rounded-full relative">
                         <div
-                          className={`h-1 rounded-full absolute top-0 left-0 ${
-                            r.anomaly_score >= 0.8 ? "bg-red-500" :
+                          className={`h-1 rounded-full absolute top-0 left-0 ${r.anomaly_score >= 0.8 ? "bg-red-500" :
                             r.anomaly_score >= 0.6 ? "bg-orange-400" :
-                            r.anomaly_score >= 0.4 ? "bg-yellow-400" :
-                            "bg-green-400"
-                          }`}
-                          style={{ width: `${r.anomaly_score * 100}%` }}
+                              r.anomaly_score >= 0.4 ? "bg-yellow-400" :
+                                "bg-green-400"
+                            }`}
+                          style={{ width: `${Math.min(100, r.anomaly_score * 100)}%` }}
                         />
                       </div>
-                      <span className={`text-[10px] font-mono ${
-                        r.anomaly_score >= 0.8 ? "text-red-500" :
+                      <span className={`text-[10px] font-mono ${r.anomaly_score >= 0.8 ? "text-red-500" :
                         r.anomaly_score >= 0.6 ? "text-orange-400" :
-                        r.anomaly_score >= 0.4 ? "text-yellow-500" :
-                        "text-green-500"
-                      }`}>{(r.anomaly_score * 100).toFixed(0)}%</span>
+                          r.anomaly_score >= 0.4 ? "text-yellow-500" :
+                            "text-green-500"
+                        }`}>{Math.min(100, r.anomaly_score * 100).toFixed(0)}%</span>
                     </div>
                   </td>
                   <td className="px-4 py-3">
@@ -153,12 +161,11 @@ export function ResultsTable(props: Props) {
             </div>
             <div className="w-full bg-accent h-1 rounded-full relative">
               <div
-                className={`h-1 rounded-full absolute top-0 left-0 ${
-                  r.risk_score >= 80 ? "bg-red-500" :
+                className={`h-1 rounded-full absolute top-0 left-0 ${r.risk_score >= 80 ? "bg-red-500" :
                   r.risk_score >= 60 ? "bg-orange-400" :
-                  r.risk_score >= 40 ? "bg-yellow-400" :
-                  "bg-green-400"
-                }`}
+                    r.risk_score >= 40 ? "bg-yellow-400" :
+                      "bg-green-400"
+                  }`}
                 style={{ width: `${r.risk_score}%` }}
               />
             </div>

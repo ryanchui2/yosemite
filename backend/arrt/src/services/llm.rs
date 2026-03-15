@@ -132,7 +132,7 @@ pub async fn analyze_geo_risk(
                 { "role": "system", "content": "You are a geopolitical risk analyst. Return only valid JSON arrays, no markdown." },
                 { "role": "user", "content": prompt }
             ],
-            "max_tokens": 1200,
+            "max_tokens": 4096,
             "temperature": 0.2
         }))
         .send()
@@ -148,8 +148,23 @@ pub async fn analyze_geo_risk(
         .trim();
 
     let normalized = normalize_json_payload(text);
-    let results = serde_json::from_str::<Vec<GeoRiskResult>>(&normalized)?;
-    Ok(results)
+    match serde_json::from_str::<Vec<GeoRiskResult>>(&normalized) {
+        Ok(results) => Ok(results),
+        Err(e) => {
+            // LLM may return truncated JSON; try to parse partial array
+            let partial = extract_complete_geo_risk_objects(&normalized);
+            if partial.is_empty() {
+                Err(e.into())
+            } else {
+                tracing::warn!(
+                    "Geo-risk JSON parse failed ({}), using {} partial result(s)",
+                    e,
+                    partial.len()
+                );
+                Ok(partial)
+            }
+        }
+    }
 }
 
 fn build_prompt(transaction_id: &str, risk_score: u32, rules: &str) -> String {
@@ -186,6 +201,66 @@ fn normalize_json_payload(payload: &str) -> String {
         .trim_end_matches("```")
         .trim()
         .to_string()
+}
+
+/// Extract complete GeoRiskResult objects from a possibly truncated JSON array.
+/// Used when the LLM response is cut off (e.g. max_tokens) so we can still return partial results.
+fn extract_complete_geo_risk_objects(s: &str) -> Vec<GeoRiskResult> {
+    let mut out = Vec::new();
+    let mut i = 0;
+    let bytes = s.as_bytes();
+    while i < bytes.len() {
+        // Find start of next object
+        let start = bytes[i..].iter().position(|&b| b == b'{');
+        let start = match start {
+            Some(p) => i + p,
+            None => break,
+        };
+        i = start + 1;
+        let mut depth = 1u32;
+        let mut in_string = false;
+        let mut escape = false;
+        let mut quote = b'"';
+        while i < bytes.len() && depth > 0 {
+            let b = bytes[i];
+            if escape {
+                escape = false;
+                i += 1;
+                continue;
+            }
+            if in_string {
+                if b == b'\\' {
+                    escape = true;
+                } else if b == quote {
+                    in_string = false;
+                }
+                i += 1;
+                continue;
+            }
+            match b {
+                b'"' | b'\'' => {
+                    in_string = true;
+                    quote = b;
+                }
+                b'{' => depth += 1,
+                b'}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        let slice = &s[start..=i];
+                        if let Ok(obj) = serde_json::from_str::<GeoRiskResult>(slice) {
+                            out.push(obj);
+                        }
+                    }
+                }
+                _ => {}
+            }
+            i += 1;
+        }
+        if depth != 0 {
+            break;
+        }
+    }
+    out
 }
 
 fn build_risk_prompt(
@@ -312,7 +387,7 @@ pub async fn explain_sanctions_entity(
     let risk_level = parsed["risk_level"]
         .as_str()
         .unwrap_or("LOW")
-        .to_string();
+        .to_uppercase();
     let ai_explanation = parsed["ai_explanation"]
         .as_str()
         .unwrap_or("")

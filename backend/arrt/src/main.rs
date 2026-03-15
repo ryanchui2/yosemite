@@ -75,6 +75,7 @@ async fn main() {
         .route("/auth/refresh", post(auth::handlers::refresh))
         .route("/auth/logout", post(auth::handlers::logout))
         .route("/api/transactions", get(routes::transactions::list))
+        .route("/api/stats", get(routes::stats::get_stats))
         .route("/api/fraud/scan", get(routes::fraud::get_cached_scan).post(routes::fraud::scan))
         .route("/api/fraud/report/summary", get(routes::fraud_report::summary))
         .route("/api/fraud/report", post(routes::fraud_report::report))

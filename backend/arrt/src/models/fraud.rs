@@ -61,6 +61,15 @@ impl From<TransactionInput> for ScoringTx {
     }
 }
 
+/// Row from fraud_reports used when merging report data into scan results.
+#[derive(sqlx::FromRow)]
+pub struct FraudReportRow {
+    pub transaction_id: String,
+    pub confirmed_fraud: bool,
+    pub notes: Option<String>,
+    pub ai_review_notes: Option<String>,
+}
+
 #[derive(Deserialize)]
 pub struct ScanRequest {
     /// Pass specific IDs, or leave empty to scan all
