@@ -334,3 +334,114 @@ export async function scanAnomalies(file: File): Promise<AnomaliesResponse> {
   };
 }
 
+// ── Saved CSV data (before/after scan) ───────────────────────────────────────
+
+export interface SaveCsvRequest {
+  name?: string;
+  stage: "before_scan" | "after_scan";
+  file_name?: string;
+  headers: string[];
+  rows: Record<string, string>[];
+  scan_id?: string;
+  scan_summary?: { total_transactions: number; flagged: number };
+  scan_results?: AnomalyResult[];
+}
+
+export interface SavedCsvData {
+  id: string;
+  name: string | null;
+  stage: string;
+  file_name: string | null;
+  headers: unknown;
+  rows: unknown;
+  scan_id: string | null;
+  scan_summary: unknown;
+  scan_results: unknown;
+  created_at: string;
+}
+
+export async function saveCsvData(
+  data: SaveCsvRequest,
+): Promise<SavedCsvData> {
+  const res = await fetch(`${BACKEND_URL}/api/csv-saves`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.text().catch(() => "");
+    throw new Error(`Save failed: ${res.status}${err ? ` — ${err}` : ""}`);
+  }
+  return res.json();
+}
+
+export async function fetchSavedCsvList(): Promise<SavedCsvData[]> {
+  const res = await fetch(`${BACKEND_URL}/api/csv-saves`);
+  if (!res.ok) throw new Error(`Failed to fetch saved CSV list: ${res.status}`);
+  return res.json();
+}
+
+export async function deleteSavedCsv(id: string): Promise<void> {
+  const res = await fetch(`${BACKEND_URL}/api/csv-saves/${id}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) {
+    const err = await res.text().catch(() => "");
+    throw new Error(`Delete failed: ${res.status}${err ? ` — ${err}` : ""}`);
+  }
+}
+
+// ── Saved entity lists (Geo & Sanctions) ─────────────────────────────────────
+
+export interface EntityRow {
+  description: string;
+  country: string;
+}
+
+export interface SaveEntityRequest {
+  name?: string;
+  entities: EntityRow[];
+  sanctions_results?: SanctionsResponse | null;
+  geo_results?: GeoRiskResponse | null;
+}
+
+export interface SavedEntityData {
+  id: string;
+  name: string | null;
+  entities: unknown;
+  sanctions_results: unknown;
+  geo_results: unknown;
+  created_at: string;
+}
+
+export async function saveEntityList(
+  data: SaveEntityRequest,
+): Promise<SavedEntityData> {
+  const res = await fetch(`${BACKEND_URL}/api/entity-saves`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.text().catch(() => "");
+    throw new Error(`Save failed: ${res.status}${err ? ` — ${err}` : ""}`);
+  }
+  return res.json();
+}
+
+export async function fetchSavedEntityList(): Promise<SavedEntityData[]> {
+  const res = await fetch(`${BACKEND_URL}/api/entity-saves`);
+  if (!res.ok) throw new Error(`Failed to fetch saved entity list: ${res.status}`);
+  return res.json();
+}
+
+export async function deleteSavedEntity(id: string): Promise<void> {
+  const res = await fetch(`${BACKEND_URL}/api/entity-saves/${id}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) {
+    const err = await res.text().catch(() => "");
+    throw new Error(`Delete failed: ${res.status}${err ? ` — ${err}` : ""}`);
+  }
+}
+
