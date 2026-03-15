@@ -166,11 +166,30 @@ export default function Dashboard() {
   const [manualTxInput, setManualTxInput] = useState<ManualTx>(emptyTx);
 
   const [sanctionsFile, setSanctionsFile] = useState<File | null>(null);
+  const [uploadedSanctionsEntities, setUploadedSanctionsEntities] = useState<{ description: string; country: string }[]>([]);
   const [manualEntities, setManualEntities] = useState<{ description: string; country: string }[]>([]);
   const [manualInput, setManualInput] = useState({ description: "", country: "" });
 
-  const [geoCountries, setGeoCountries] = useState("");
   const [error, setError] = useState<string | null>(null);
+
+  /** Parse a CSV string into entity rows using same column rules as backend (description|name|entity_name|company|vendor|customer_name, country|ip_country). */
+  function parseSanctionsCsv(text: string): { description: string; country: string }[] {
+    const lines = text.trim().split(/\r?\n/);
+    if (lines.length < 2) return [];
+    const hdrs = lines[0].split(",").map((h) => h.trim().replace(/^"|"$/g, "").toLowerCase());
+    const entityNameColumns = ["description", "name", "entity_name", "company", "vendor", "customer_name"];
+    const entityCol = entityNameColumns.find((col) => hdrs.includes(col));
+    const nameIdx = entityCol !== undefined ? hdrs.indexOf(entityCol) : -1;
+    const countryIdx = hdrs.indexOf("country") !== -1 ? hdrs.indexOf("country") : hdrs.indexOf("ip_country");
+    const out: { description: string; country: string }[] = [];
+    if (nameIdx === -1) return [];
+    for (const line of lines.slice(1)) {
+      const vals = line.split(",").map((v) => v.trim().replace(/^"|"$/g, ""));
+      const desc = vals[nameIdx];
+      if (desc) out.push({ description: desc, country: vals[countryIdx] ?? "" });
+    }
+    return out;
+  }
 
   function handleAnomalyFile(file: File) {
     setCsvOriginalFile(file);
@@ -259,44 +278,32 @@ export default function Dashboard() {
   }
 
   async function handleSanctionsScan() {
-    if (!sanctionsFile && manualEntities.length === 0 && !geoCountries.trim()) return;
+    if (!sanctionsFile && manualEntities.length === 0) return;
     setSanctionsLoading(true);
     setGeoRiskLoading(true);
     setError(null);
 
-    // Run sanctions + geo risk in parallel
-    const sanctionsPromise = (async () => {
-      const allEntities: { description: string; country: string }[] = [];
-      if (sanctionsFile) {
-        const text = await sanctionsFile.text();
-        const lines = text.trim().split(/\r?\n/);
-        const hdrs = lines[0].split(",").map((h) => h.trim().replace(/^"|"$/g, "").toLowerCase());
-        const descIdx = hdrs.indexOf("description");
-        const countryIdx = hdrs.indexOf("country");
-        if (descIdx !== -1) {
-          for (const line of lines.slice(1)) {
-            const vals = line.split(",").map((v) => v.trim().replace(/^"|"$/g, ""));
-            const desc = vals[descIdx];
-            if (desc) allEntities.push({ description: desc, country: vals[countryIdx] ?? "" });
-          }
-        }
-      }
-      for (const e of manualEntities) allEntities.push(e);
-      if (allEntities.length > 0) {
-        const csvContent = "description,country\n" + allEntities.map((e) => `${e.description},${e.country}`).join("\n");
-        const fileToScan = new File([csvContent], "entities.csv", { type: "text/csv" });
-        return scanSanctions(fileToScan);
-      }
-      return null;
-    })();
+    const fileEntities =
+      uploadedSanctionsEntities.length > 0
+        ? uploadedSanctionsEntities
+        : sanctionsFile
+          ? parseSanctionsCsv(await sanctionsFile.text())
+          : [];
+    const allEntities = [...fileEntities, ...manualEntities];
 
-    const geoPromise = (async () => {
-      const countries = geoCountries.split(",").map((c) => c.trim()).filter(Boolean);
-      if (countries.length > 0) {
-        return analyzeGeoRisk(countries);
-      }
-      return null;
-    })();
+    const uniqueCountries = [...new Set(allEntities.map((e) => e.country.trim()).filter(Boolean))];
+
+    const sanctionsPromise =
+      allEntities.length > 0
+        ? (() => {
+          const csvContent = "description,country\n" + allEntities.map((e) => `${e.description},${e.country}`).join("\n");
+          const fileToScan = new File([csvContent], "entities.csv", { type: "text/csv" });
+          return scanSanctions(fileToScan);
+        })()
+        : Promise.resolve(null);
+
+    const geoPromise =
+      uniqueCountries.length > 0 ? analyzeGeoRisk(uniqueCountries) : Promise.resolve(null);
 
     try {
       const [sanctionsResult, geoResult] = await Promise.allSettled([sanctionsPromise, geoPromise]);
@@ -352,8 +359,8 @@ export default function Dashboard() {
                 key={item.id}
                 onClick={() => setActiveTab(item.id)}
                 className={`flex items-center gap-3 px-4 py-2.5 text-xs tracking-wider transition-colors text-left border font-heading ${activeTab === item.id
-                    ? "bg-foreground text-background border-foreground"
-                    : "bg-transparent text-foreground border-border hover:border-foreground/40"
+                  ? "bg-foreground text-background border-foreground"
+                  : "bg-transparent text-foreground border-border hover:border-foreground/40"
                   }`}
               >
                 {item.icon}
@@ -604,10 +611,46 @@ export default function Dashboard() {
 
                     <DropZone
                       hint="description, country"
-                      onFile={(f) => { setSanctionsFile(f); setError(null); }}
-                      onRemove={() => { setSanctionsFile(null); setSanctionsData(null); setError(null); }}
+                      onFile={(f) => {
+                        setSanctionsFile(f);
+                        setError(null);
+                        f.text().then((text) => setUploadedSanctionsEntities(parseSanctionsCsv(text)));
+                      }}
+                      onRemove={() => {
+                        setSanctionsFile(null);
+                        setUploadedSanctionsEntities([]);
+                        setSanctionsData(null);
+                        setGeoRiskData(null);
+                        setError(null);
+                      }}
                       fileName={sanctionsFile?.name}
                     />
+
+                    {uploadedSanctionsEntities.length > 0 && (
+                      <div className="border border-border overflow-hidden">
+                        <p className="text-[10px] text-muted-foreground uppercase tracking-wider px-3 py-2 border-b border-border bg-accent/50">
+                          From your file ({uploadedSanctionsEntities.length} entities)
+                        </p>
+                        <div className="max-h-48 overflow-auto">
+                          <table className="w-full text-xs">
+                            <thead className="sticky top-0 bg-accent text-muted-foreground uppercase tracking-wider">
+                              <tr>
+                                <th className="px-3 py-2 text-left font-medium">Entity</th>
+                                <th className="px-3 py-2 text-left font-medium">Country</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-border">
+                              {uploadedSanctionsEntities.map((e, i) => (
+                                <tr key={i} className="hover:bg-accent/30">
+                                  <td className="px-3 py-2 font-medium text-foreground truncate max-w-[180px]">{e.description}</td>
+                                  <td className="px-3 py-2 text-muted-foreground">{e.country || "—"}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
 
                     <div className="flex items-center gap-2">
                       <div className="flex-1 h-px bg-border" />
@@ -651,31 +694,9 @@ export default function Dashboard() {
                     </div>
                   </div>
 
-                  {/* Geo risk input */}
-                  <div className="space-y-4">
-                    <div className="h-px bg-border" />
-                    <div className="flex items-center gap-3">
-                      <div className="h-8 w-8 border border-border flex items-center justify-center">
-                        <Globe className="h-4 w-4 text-foreground" />
-                      </div>
-                      <div>
-                        <p className="text-sm font-semibold text-foreground">Geopolitical Monitor</p>
-                        <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Country risk</p>
-                      </div>
-                    </div>
-
-                    <textarea
-                      value={geoCountries}
-                      onChange={(e) => setGeoCountries(e.target.value)}
-                      placeholder="Myanmar, Nigeria, Turkey"
-                      rows={3}
-                      className="w-full border border-border bg-background px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground/40 resize-none focus:outline-none focus:border-foreground transition-colors"
-                    />
-                  </div>
-
                   <Button
                     className="w-full"
-                    disabled={(sanctionsLoading && geoRiskLoading) || (!sanctionsFile && manualEntities.length === 0 && !geoCountries.trim())}
+                    disabled={(sanctionsLoading || geoRiskLoading) || (!sanctionsFile && manualEntities.length === 0)}
                     onClick={handleSanctionsScan}
                   >
                     {(sanctionsLoading || geoRiskLoading) ? "Scanning..." : "Run Scan"}
@@ -697,7 +718,7 @@ export default function Dashboard() {
                   {!sanctionsData && !geoRiskData && (
                     <div className="py-16 text-center text-muted-foreground">
                       <Globe className="h-6 w-6 mx-auto mb-3 opacity-30" />
-                      <p className="text-xs uppercase tracking-wider">Add entities or countries and run a scan to see results here.</p>
+                      <p className="text-xs uppercase tracking-wider">Add entities (with optional country) and run a scan. Geopolitical risk is shown for countries in your list.</p>
                     </div>
                   )}
                 </div>
