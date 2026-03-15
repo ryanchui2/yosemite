@@ -82,7 +82,7 @@ function DropZone({
         <input
           ref={inputRef}
           type="file"
-          accept=".csv"
+          accept=".csv,.pdf"
           className="hidden"
           onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f); }}
         />
@@ -94,7 +94,7 @@ function DropZone({
         ) : (
           <div className="flex flex-col items-center gap-1.5">
             <Upload className="h-4 w-4 text-muted-foreground" />
-            <p className="text-xs text-muted-foreground">Drop CSV or click to browse</p>
+            <p className="text-xs text-muted-foreground">Drop CSV/PDF or click to browse</p>
             <p className="text-[11px] text-muted-foreground/60">{hint}</p>
           </div>
         )}
@@ -206,32 +206,37 @@ export default function Dashboard() {
 
   function handleAnomalyFile(file: File) {
     setCsvOriginalFile(file);
-    file.text().then((text) => {
-      const { headers: newHeaders, rows: newRows } = parseCSV(text);
-      setCsvHeaders((prevHeaders) => {
-        const merged = prevHeaders.length ? [...prevHeaders] : [];
-        for (const h of newHeaders) {
-          if (!merged.includes(h)) merged.push(h);
-        }
-        return merged.length ? merged : newHeaders;
+    setCsvFileName(file.name);
+    setAnomaliesData(null);
+    setError(null);
+    if (file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")) {
+      setCsvHeaders([]);
+      setCsvRows([]);
+    } else {
+      file.text().then((text) => {
+        const { headers: newHeaders, rows: newRows } = parseCSV(text);
+        setCsvHeaders((prevHeaders) => {
+          const merged = prevHeaders.length ? [...prevHeaders] : [];
+          for (const h of newHeaders) {
+            if (!merged.includes(h)) merged.push(h);
+          }
+          return merged.length ? merged : newHeaders;
+        });
+        setCsvRows((prevRows) => {
+          const mergedHeaders = csvHeaders.length ? [...csvHeaders] : [...newHeaders];
+          for (const h of newHeaders) {
+            if (!mergedHeaders.includes(h)) mergedHeaders.push(h);
+          }
+          const existingRows = prevRows.map((r) =>
+            Object.fromEntries(mergedHeaders.map((col) => [col, r[col] ?? ""]))
+          );
+          const appended = newRows.map((r) =>
+            Object.fromEntries(mergedHeaders.map((col) => [col, r[col] ?? ""]))
+          );
+          return [...existingRows, ...appended];
+        });
       });
-      setCsvRows((prevRows) => {
-        const mergedHeaders = csvHeaders.length ? [...csvHeaders] : [...newHeaders];
-        for (const h of newHeaders) {
-          if (!mergedHeaders.includes(h)) mergedHeaders.push(h);
-        }
-        const existingRows = prevRows.map((r) =>
-          Object.fromEntries(mergedHeaders.map((col) => [col, r[col] ?? ""]))
-        );
-        const appended = newRows.map((r) =>
-          Object.fromEntries(mergedHeaders.map((col) => [col, r[col] ?? ""]))
-        );
-        return [...existingRows, ...appended];
-      });
-      setCsvFileName(file.name);
-      setAnomaliesData(null);
-      setError(null);
-    });
+    }
   }
 
   function addManualTransaction() {
@@ -259,7 +264,7 @@ export default function Dashboard() {
   }
 
   async function handleRunAnalysis() {
-    if (!csvRows.length && !manualTransactions.length) return;
+    if (!csvRows.length && !manualTransactions.length && !csvOriginalFile) return;
     setAnomaliesLoading(true);
     setError(null);
     const TX_HEADERS = [
@@ -297,10 +302,16 @@ export default function Dashboard() {
       let file: File;
       let rowsToSend: Record<string, string>[];
 
-      if (doFullScan) {
+      if (csvOriginalFile && (csvOriginalFile.type === "application/pdf" || csvOriginalFile.name.toLowerCase().endsWith(".pdf"))) {
+        file = csvOriginalFile;
+        setLastScannedCount(0);
+        rowsToSend = allRows;
+      } else if (doFullScan) {
         setLastScannedCount(0);
         rowsToSend = allRows;
         if (manualTransactions.length === 0 && csvOriginalFile && totalRows === csvRows.length) {
+          // No manual entries — send the original uploaded file untouched to avoid
+          // any lossy parse→reconstruct round-trip corrupting fraud signal columns.
           file = csvOriginalFile;
         } else {
           setCsvHeaders(headers);
@@ -585,7 +596,7 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen bg-background text-foreground font-sans">
       {/* Floating header */}
-      <header className="sticky top-0 z-50 flex items-center justify-between mx-4 mt-3 px-5 py-3 bg-gray-100/80 backdrop-blur-md border border-border font-heading">
+      <header className="fixed top-3 inset-x-4 z-50 flex items-center justify-between px-5 py-3 bg-background/80 border border-border font-heading">
         <div className="flex items-center gap-3">
           <Image src="/yosemite_logo.png" alt="yosemite logo" width={32} height={32} />
           <span className="text-[17px] font-semibold tracking-tight text-foreground">yosemite</span>
@@ -602,9 +613,9 @@ export default function Dashboard() {
         </div>
       </header>
 
-      <div className="flex min-h-[calc(100vh-53px)]">
+      <div className="flex min-h-screen pt-20">
         {/* Sidebar */}
-        <aside className="w-56 flex flex-col justify-between p-4">
+        <aside className="fixed top-20 left-0 w-56 h-[calc(100vh-5rem)] flex flex-col justify-between p-4">
           <nav className="flex flex-col gap-2">
             {sidebarItems.map((item) => (
               <button
@@ -623,7 +634,7 @@ export default function Dashboard() {
         </aside>
 
         {/* Main content */}
-        <main className="flex-1 p-6 overflow-auto">
+        <main className="flex-1 p-6 overflow-auto ml-56">
           {error && (
             <div className="border border-destructive p-3 text-sm text-destructive font-mono mb-6">
               {error}
@@ -798,7 +809,7 @@ export default function Dashboard() {
                     )}
                   </div>
 
-                  <Button className="w-full" disabled={anomaliesLoading || (csvRows.length === 0 && manualTransactions.length === 0)} onClick={handleRunAnalysis}>
+                  <Button className="w-full" disabled={anomaliesLoading || (csvRows.length === 0 && manualTransactions.length === 0 && !csvOriginalFile)} onClick={handleRunAnalysis}>
                     {anomaliesLoading ? "Analyzing..." : "Run Analysis"}
                   </Button>
                   {(csvRows.length > 0 || manualTransactions.length > 0) && (
@@ -874,14 +885,14 @@ export default function Dashboard() {
                 </div>
                 <div className="p-6 space-y-8">
                   {/* Current session */}
-                  {csvHeaders.length > 0 || manualTransactions.length > 0 ? (
+                  {csvHeaders.length > 0 || manualTransactions.length > 0 || csvOriginalFile ? (
                     <div className="space-y-5">
                       <div className="flex items-center justify-between flex-wrap gap-2">
                         <p className="text-xs text-muted-foreground font-mono">
-                          {csvRows.length + (csvHeaders.length > 0 ? 0 : manualTransactions.length)} row{(csvRows.length + manualTransactions.length) !== 1 ? "s" : ""} — click any cell to edit
+                          {(csvOriginalFile?.type === "application/pdf" || csvOriginalFile?.name.toLowerCase().endsWith(".pdf")) ? "1 PDF document" : `${csvRows.length + (csvHeaders.length > 0 ? 0 : manualTransactions.length)} row${(csvRows.length + manualTransactions.length) !== 1 ? "s" : ""} — click any cell to edit`}
                         </p>
                         <div className="flex items-center gap-2 flex-wrap">
-                          <Button disabled={anomaliesLoading || (csvRows.length === 0 && manualTransactions.length === 0)} onClick={handleRunAnalysis}>
+                          <Button disabled={anomaliesLoading || (csvRows.length === 0 && manualTransactions.length === 0 && !csvOriginalFile)} onClick={handleRunAnalysis}>
                             {anomaliesLoading ? "Analyzing..." : "Run Analysis"}
                           </Button>
                           <Button
@@ -906,7 +917,7 @@ export default function Dashboard() {
                   ) : (
                     <div className="py-16 text-center text-muted-foreground">
                       <AlertTriangle className="h-6 w-6 mx-auto mb-3 opacity-30" />
-                      <p className="text-xs uppercase tracking-wider">Upload a transaction CSV to get started.</p>
+                      <p className="text-xs uppercase tracking-wider">Upload a transaction CSV or PDF to get started.</p>
                     </div>
                   )}
                 </div>
