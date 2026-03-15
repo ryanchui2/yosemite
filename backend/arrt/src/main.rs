@@ -71,6 +71,10 @@ async fn main() {
         .route("/api/chat", post(routes::chat::respond))
         .route("/api/entity/investigate", post(routes::entity::investigate))
         .route("/api/sanctions/scan", post(routes::sanctions::scan))
+        .route("/api/csv-saves", post(routes::csv_saves::create).get(routes::csv_saves::list))
+        .route("/api/csv-saves/{id}", axum::routing::delete(routes::csv_saves::delete))
+        .route("/api/entity-saves", post(routes::entity_saves::create).get(routes::entity_saves::list))
+        .route("/api/entity-saves/{id}", axum::routing::delete(routes::entity_saves::delete))
         .with_state(state)
         .layer(cors);
 

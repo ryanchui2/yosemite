@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useEffect } from "react";
+import { useRef, useState, useEffect, useCallback } from "react";
 import { ResultsTable } from "@/components/ResultsTable";
 import { PDFExport } from "@/components/PDFExport";
 import { CSVDataTable } from "@/components/CSVDataTable";
@@ -8,8 +8,8 @@ import { Button } from "@/components/ui/button";
 import { ProtectionScore } from "@/components/ProtectionScore";
 import { FlaggedTransactions } from "@/components/FlaggedTransactions";
 import { RiskOverview } from "@/components/RiskOverview";
-import { scanSanctions, scanAnomalies, analyzeGeoRisk, scanFraud, fetchFraudReportSummary } from "@/lib/api";
-import type { SanctionsResponse, AnomaliesResponse, GeoRiskResponse, FraudScanResponse, FraudReportSummary } from "@/lib/api";
+import { scanSanctions, scanAnomalies, analyzeGeoRisk, scanFraud, fetchFraudReportSummary, saveCsvData, fetchSavedCsvList, deleteSavedCsv, saveEntityList, fetchSavedEntityList, deleteSavedEntity } from "@/lib/api";
+import type { SanctionsResponse, AnomaliesResponse, GeoRiskResponse, FraudScanResponse, FraudReportSummary, SavedCsvData, AnomalyResult, SavedEntityData } from "@/lib/api";
 import { AlertTriangle, Globe, Shield, Upload, Cuboid, Drama, Ship } from "lucide-react";
 import Image from "next/image";
 
@@ -171,6 +171,19 @@ export default function Dashboard() {
   const [manualInput, setManualInput] = useState({ description: "", country: "" });
 
   const [error, setError] = useState<string | null>(null);
+  const [csvSaveMessage, setCsvSaveMessage] = useState<string | null>(null);
+  const [csvSaveLoading, setCsvSaveLoading] = useState(false);
+  const [saveLogName, setSaveLogName] = useState("");
+  const [lastScannedCount, setLastScannedCount] = useState(0);
+
+  const [savedLogs, setSavedLogs] = useState<SavedCsvData[]>([]);
+  const [savedLogsLoading, setSavedLogsLoading] = useState(false);
+
+  const [savedEntityLogs, setSavedEntityLogs] = useState<SavedEntityData[]>([]);
+  const [savedEntityLogsLoading, setSavedEntityLogsLoading] = useState(false);
+  const [entitySaveMessage, setEntitySaveMessage] = useState<string | null>(null);
+  const [entitySaveLoading, setEntitySaveLoading] = useState(false);
+  const [saveEntityLogName, setSaveEntityLogName] = useState("");
 
   /** Parse a CSV string into entity rows using same column rules as backend (description|name|entity_name|company|vendor|customer_name, country|ip_country). */
   function parseSanctionsCsv(text: string): { description: string; country: string }[] {
@@ -193,20 +206,38 @@ export default function Dashboard() {
 
   function handleAnomalyFile(file: File) {
     setCsvOriginalFile(file);
-      setCsvFileName(file.name);
-      setAnomaliesData(null);
-      setError(null);
-      if (file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")) {
-        setCsvHeaders([]);
-        setCsvRows([]);
-      } else {
-        file.text().then((text) => {
-          const { headers, rows } = parseCSV(text);
-          setCsvHeaders(headers);
-          setCsvRows(rows);
+    setCsvFileName(file.name);
+    setAnomaliesData(null);
+    setError(null);
+    if (file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")) {
+      setCsvHeaders([]);
+      setCsvRows([]);
+    } else {
+      file.text().then((text) => {
+        const { headers: newHeaders, rows: newRows } = parseCSV(text);
+        setCsvHeaders((prevHeaders) => {
+          const merged = prevHeaders.length ? [...prevHeaders] : [];
+          for (const h of newHeaders) {
+            if (!merged.includes(h)) merged.push(h);
+          }
+          return merged.length ? merged : newHeaders;
         });
-      }
+        setCsvRows((prevRows) => {
+          const mergedHeaders = csvHeaders.length ? [...csvHeaders] : [...newHeaders];
+          for (const h of newHeaders) {
+            if (!mergedHeaders.includes(h)) mergedHeaders.push(h);
+          }
+          const existingRows = prevRows.map((r) =>
+            Object.fromEntries(mergedHeaders.map((col) => [col, r[col] ?? ""]))
+          );
+          const appended = newRows.map((r) =>
+            Object.fromEntries(mergedHeaders.map((col) => [col, r[col] ?? ""]))
+          );
+          return [...existingRows, ...appended];
+        });
+      });
     }
+  }
 
   function addManualTransaction() {
     if (!manualTxInput.customer_name.trim()) return;
@@ -236,53 +267,278 @@ export default function Dashboard() {
     if (!csvRows.length && !manualTransactions.length && !csvOriginalFile) return;
     setAnomaliesLoading(true);
     setError(null);
+    const TX_HEADERS = [
+      "transaction_id", "customer_name", "timestamp", "amount", "currency",
+      "payment_method", "card_last4", "card_brand", "ip_country", "ip_is_vpn",
+      "device_type", "cvv_match", "address_match",
+    ];
+    const headers = csvHeaders.length ? csvHeaders : TX_HEADERS;
+    const allRows: Record<string, string>[] = [
+      ...csvRows,
+      ...manualTransactions.map((t) => ({
+        transaction_id: crypto.randomUUID(),
+        customer_name: t.customer_name,
+        timestamp: t.timestamp,
+        amount: t.amount,
+        currency: t.currency,
+        payment_method: t.payment_method,
+        card_last4: t.card_last4,
+        card_brand: t.card_brand,
+        ip_country: t.ip_country,
+        ip_is_vpn: String(t.ip_is_vpn),
+        device_type: t.device_type,
+        cvv_match: String(t.cvv_match),
+        address_match: String(t.address_match),
+      })),
+    ];
+    const totalRows = allRows.length;
+    // Only do incremental (skip already-scanned rows) when we have a prior run and new rows were added
+    const doFullScan =
+      lastScannedCount === 0 ||
+      lastScannedCount >= totalRows ||
+      !anomaliesData;
+
     try {
       let file: File;
+      let rowsToSend: Record<string, string>[];
 
       if (csvOriginalFile && (csvOriginalFile.type === "application/pdf" || csvOriginalFile.name.toLowerCase().endsWith(".pdf"))) {
         file = csvOriginalFile;
-      } else if (manualTransactions.length === 0 && csvOriginalFile) {
-        // No manual entries — send the original uploaded file untouched to avoid
-        // any lossy parse→reconstruct round-trip corrupting fraud signal columns.
-        file = csvOriginalFile;
+        setLastScannedCount(0);
+        rowsToSend = allRows;
+      } else if (doFullScan) {
+        setLastScannedCount(0);
+        rowsToSend = allRows;
+        if (manualTransactions.length === 0 && csvOriginalFile && totalRows === csvRows.length) {
+          // No manual entries — send the original uploaded file untouched to avoid
+          // any lossy parse→reconstruct round-trip corrupting fraud signal columns.
+          file = csvOriginalFile;
+        } else {
+          setCsvHeaders(headers);
+          setCsvRows(allRows);
+          file = rowsToCSVFile(headers, allRows);
+        }
       } else {
-        const TX_HEADERS = [
-          "transaction_id", "customer_name", "timestamp", "amount", "currency",
-          "payment_method", "card_last4", "card_brand", "ip_country", "ip_is_vpn",
-          "device_type", "cvv_match", "address_match",
-        ];
-        const headers = csvHeaders.length ? csvHeaders : TX_HEADERS;
-        const allRows: Record<string, string>[] = [
-          ...csvRows,
-          ...manualTransactions.map((t) => ({
-            transaction_id: crypto.randomUUID(),
-            customer_name: t.customer_name,
-            timestamp: t.timestamp,
-            amount: t.amount,
-            currency: t.currency,
-            payment_method: t.payment_method,
-            card_last4: t.card_last4,
-            card_brand: t.card_brand,
-            ip_country: t.ip_country,
-            ip_is_vpn: String(t.ip_is_vpn),
-            device_type: t.device_type,
-            cvv_match: String(t.cvv_match),
-            address_match: String(t.address_match),
-          })),
-        ];
+        // Send only new rows (indices lastScannedCount..totalRows-1)
+        const newRowsOnly = allRows.slice(lastScannedCount);
+        rowsToSend = newRowsOnly;
         setCsvHeaders(headers);
         setCsvRows(allRows);
-        file = rowsToCSVFile(headers, allRows);
+        file = rowsToCSVFile(headers, newRowsOnly);
       }
 
       const data = await scanAnomalies(file);
-      setAnomaliesData(data);
+
+      if (!doFullScan && anomaliesData && data.results.length > 0) {
+        const existingResults = anomaliesData.results;
+        const newResults = data.results.map((r, i) => ({
+          ...r,
+          row_index: lastScannedCount + i,
+        }));
+        const mergedResults = [...existingResults, ...newResults];
+        const mergedFlagged = mergedResults.filter(
+          (r) => r.risk_level === "HIGH" || r.risk_level === "MEDIUM"
+        ).length;
+        setAnomaliesData({
+          scan_id: anomaliesData.scan_id,
+          total_transactions: totalRows,
+          flagged: mergedFlagged,
+          results: mergedResults,
+        });
+      } else {
+        setAnomaliesData(data);
+      }
+      setLastScannedCount(totalRows);
     } catch {
       setError("Anomaly scan failed. Is the backend running?");
     } finally {
       setAnomaliesLoading(false);
     }
   }
+
+  /** Build current transaction set (CSV + manual) for save/scan. */
+  function getCurrentTransactionSet(): { headers: string[]; rows: Record<string, string>[] } {
+    const TX_HEADERS = [
+      "transaction_id", "customer_name", "timestamp", "amount", "currency",
+      "payment_method", "card_last4", "card_brand", "ip_country", "ip_is_vpn",
+      "device_type", "cvv_match", "address_match",
+    ];
+    const headers = csvHeaders.length ? csvHeaders : TX_HEADERS;
+    const rows: Record<string, string>[] = [
+      ...csvRows,
+      ...manualTransactions.map((t) => ({
+        transaction_id: crypto.randomUUID(),
+        customer_name: t.customer_name,
+        timestamp: t.timestamp,
+        amount: t.amount,
+        currency: t.currency,
+        payment_method: t.payment_method,
+        card_last4: t.card_last4,
+        card_brand: t.card_brand,
+        ip_country: t.ip_country,
+        ip_is_vpn: String(t.ip_is_vpn),
+        device_type: t.device_type,
+        cvv_match: String(t.cvv_match),
+        address_match: String(t.address_match),
+      })),
+    ];
+    return { headers, rows };
+  }
+
+  /** Save current transaction log (with optional name). Includes scan results if we have them. */
+  async function handleSaveTransactionLog() {
+    const { headers, rows } = getCurrentTransactionSet();
+    if (!rows.length) return;
+    setCsvSaveLoading(true);
+    setCsvSaveMessage(null);
+    try {
+      const name = saveLogName.trim() || `Transactions – ${new Date().toLocaleDateString("en-CA", { month: "short", day: "numeric", year: "numeric" })}`;
+      await saveCsvData({
+        name,
+        stage: anomaliesData ? "after_scan" : "before_scan",
+        file_name: csvFileName ?? undefined,
+        headers,
+        rows,
+        ...(anomaliesData && {
+          scan_id: anomaliesData.scan_id,
+          scan_summary: { total_transactions: anomaliesData.total_transactions, flagged: anomaliesData.flagged },
+          scan_results: anomaliesData.results,
+        }),
+      });
+      setCsvSaveMessage("Saved");
+      setTimeout(() => setCsvSaveMessage(null), 3000);
+      loadSavedLogs();
+    } catch (e) {
+      setCsvSaveMessage(e instanceof Error ? e.message : "Save failed");
+    } finally {
+      setCsvSaveLoading(false);
+    }
+  }
+
+  /** Fetch saved transaction logs (for anomaly tab). */
+  const loadSavedLogs = useCallback(async () => {
+    setSavedLogsLoading(true);
+    try {
+      const list = await fetchSavedCsvList();
+      setSavedLogs(list);
+    } catch {
+      setSavedLogs([]);
+    } finally {
+      setSavedLogsLoading(false);
+    }
+  }, []);
+
+  /** Load a saved log into the workspace so the user can add new transactions and re-scan. */
+  function handleLoadSavedLog(saved: SavedCsvData) {
+    const headers = Array.isArray(saved.headers) ? (saved.headers as string[]) : [];
+    const rows = Array.isArray(saved.rows) ? (saved.rows as Record<string, string>[]) : [];
+    setCsvHeaders(headers);
+    setCsvRows(rows);
+    setCsvFileName(saved.file_name ?? undefined);
+    setCsvOriginalFile(null);
+    setManualTransactions([]);
+    setLastScannedCount(rows.length);
+    if (saved.scan_results && saved.scan_summary && typeof saved.scan_summary === "object" && "total_transactions" in saved.scan_summary && "flagged" in saved.scan_summary) {
+      const summary = saved.scan_summary as { total_transactions: number; flagged: number };
+      setAnomaliesData({
+        scan_id: (saved.scan_id as string) ?? crypto.randomUUID(),
+        total_transactions: summary.total_transactions,
+        flagged: summary.flagged,
+        results: (saved.scan_results as AnomalyResult[]) ?? [],
+      });
+    } else {
+      setAnomaliesData(null);
+    }
+  }
+
+  /** Remove a saved log. */
+  async function handleDeleteSavedLog(id: string) {
+    try {
+      await deleteSavedCsv(id);
+      setSavedLogs((prev) => prev.filter((s) => s.id !== id));
+    } catch (e) {
+      setCsvSaveMessage(e instanceof Error ? e.message : "Delete failed");
+      setTimeout(() => setCsvSaveMessage(null), 3000);
+    }
+  }
+
+  useEffect(() => {
+    if (activeTab === "anomaly") loadSavedLogs();
+  }, [activeTab, loadSavedLogs]);
+
+  /** Current entity list (file + manual) for Geo & Sanctions save. */
+  function getCurrentEntities(): { description: string; country: string }[] {
+    return [...uploadedSanctionsEntities, ...manualEntities];
+  }
+
+  /** Save current entity list (with optional name). Includes scan results if available. */
+  async function handleSaveEntityList() {
+    const entities = getCurrentEntities();
+    if (!entities.length) return;
+    setEntitySaveLoading(true);
+    setEntitySaveMessage(null);
+    try {
+      const name = saveEntityLogName.trim() || `Entity list – ${new Date().toLocaleDateString("en-CA", { month: "short", day: "numeric", year: "numeric" })}`;
+      await saveEntityList({
+        name,
+        entities,
+        sanctions_results: sanctionsData ?? undefined,
+        geo_results: geoRiskData ?? undefined,
+      });
+      setEntitySaveMessage("Saved");
+      setTimeout(() => setEntitySaveMessage(null), 3000);
+      loadSavedEntityLogs();
+    } catch (e) {
+      setEntitySaveMessage(e instanceof Error ? e.message : "Save failed");
+    } finally {
+      setEntitySaveLoading(false);
+    }
+  }
+
+  const loadSavedEntityLogs = useCallback(async () => {
+    setSavedEntityLogsLoading(true);
+    try {
+      const list = await fetchSavedEntityList();
+      setSavedEntityLogs(list);
+    } catch {
+      setSavedEntityLogs([]);
+    } finally {
+      setSavedEntityLogsLoading(false);
+    }
+  }, []);
+
+  /** Load a saved entity list so the user can add more and re-scan. */
+  function handleLoadSavedEntityLog(saved: SavedEntityData) {
+    const entities = Array.isArray(saved.entities) ? (saved.entities as { description: string; country: string }[]) : [];
+    setSanctionsFile(null);
+    setUploadedSanctionsEntities([]);
+    setManualEntities(entities);
+    setManualInput({ description: "", country: "" });
+    if (saved.sanctions_results && typeof saved.sanctions_results === "object" && "results" in saved.sanctions_results) {
+      setSanctionsData(saved.sanctions_results as SanctionsResponse);
+    } else {
+      setSanctionsData(null);
+    }
+    if (saved.geo_results && typeof saved.geo_results === "object" && "results" in saved.geo_results) {
+      setGeoRiskData(saved.geo_results as GeoRiskResponse);
+    } else {
+      setGeoRiskData(null);
+    }
+  }
+
+  async function handleDeleteSavedEntityLog(id: string) {
+    try {
+      await deleteSavedEntity(id);
+      setSavedEntityLogs((prev) => prev.filter((s) => s.id !== id));
+    } catch (e) {
+      setEntitySaveMessage(e instanceof Error ? e.message : "Delete failed");
+      setTimeout(() => setEntitySaveMessage(null), 3000);
+    }
+  }
+
+  useEffect(() => {
+    if (activeTab === "geosanctions") loadSavedEntityLogs();
+  }, [activeTab, loadSavedEntityLogs]);
 
   async function handleSanctionsScan() {
     if (!sanctionsFile && manualEntities.length === 0) return;
@@ -432,7 +688,7 @@ export default function Dashboard() {
                   <DropZone
                     hint="date, vendor, amount"
                     onFile={handleAnomalyFile}
-                    onRemove={() => { setCsvHeaders([]); setCsvRows([]); setCsvFileName(undefined); setAnomaliesData(null); setError(null); }}
+                    onRemove={() => { setCsvFileName(undefined); setCsvOriginalFile(null); }}
                     fileName={csvFileName}
                   />
 
@@ -556,6 +812,60 @@ export default function Dashboard() {
                   <Button className="w-full" disabled={anomaliesLoading || (csvRows.length === 0 && manualTransactions.length === 0 && !csvOriginalFile)} onClick={handleRunAnalysis}>
                     {anomaliesLoading ? "Analyzing..." : "Run Analysis"}
                   </Button>
+                  {(csvRows.length > 0 || manualTransactions.length > 0) && (
+                    <div className="space-y-2">
+                      <input
+                        type="text"
+                        value={saveLogName}
+                        onChange={(e) => setSaveLogName(e.target.value)}
+                        placeholder="Name this log (optional)"
+                        className="w-full border border-border bg-background px-2.5 py-1.5 text-xs text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-foreground transition-colors"
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="w-full border-dashed"
+                        disabled={csvSaveLoading}
+                        onClick={handleSaveTransactionLog}
+                      >
+                        {csvSaveLoading ? "Saving..." : "Save transaction log"}
+                      </Button>
+                    </div>
+                  )}
+                  {csvSaveMessage && (
+                    <p className={`text-[11px] font-mono text-center ${csvSaveMessage.startsWith("Saved") ? "text-green-600" : "text-destructive"}`}>
+                      {csvSaveMessage}
+                    </p>
+                  )}
+
+                  {/* Previous transaction logs — load to add new transactions and re-scan */}
+                  <div className="space-y-2 pt-2 border-t border-border">
+                    <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Your saved transaction logs</p>
+                    {savedLogsLoading ? (
+                      <p className="text-[11px] text-muted-foreground font-mono">Loading...</p>
+                    ) : savedLogs.length === 0 ? (
+                      <p className="text-[11px] text-muted-foreground">No saved logs yet. Save above to keep a record.</p>
+                    ) : (
+                      <ul className="space-y-1.5 max-h-36 overflow-auto">
+                        {savedLogs.map((log) => {
+                          const rows = Array.isArray(log.rows) ? (log.rows as Record<string, string>[]).length : 0;
+                          const label = (log.name || log.file_name || `Saved ${new Date(log.created_at).toLocaleDateString("en-CA", { month: "short", day: "numeric", year: "numeric" })}`).trim();
+                          return (
+                            <li key={log.id} className="flex items-center justify-between gap-2 border border-border px-2.5 py-1.5 bg-background">
+                              <div className="min-w-0 flex-1">
+                                <p className="text-xs font-medium text-foreground truncate">{label}</p>
+                                <p className="text-[10px] text-muted-foreground">{rows} transaction{rows !== 1 ? "s" : ""}</p>
+                              </div>
+                              <div className="flex items-center gap-1 shrink-0">
+                                <button type="button" onClick={() => handleLoadSavedLog(log)} className="text-[10px] uppercase tracking-wider border border-border hover:border-foreground px-2 py-1 text-foreground transition-colors">Load</button>
+                                <button type="button" onClick={() => handleDeleteSavedLog(log.id)} className="text-muted-foreground hover:text-destructive transition-colors" title="Delete">✕</button>
+                              </div>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </div>
                 </div>
 
                 {/* Right: Flagged Transactions */}
@@ -573,17 +883,34 @@ export default function Dashboard() {
                 <div className="px-5 py-3 border-b border-border">
                   <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-[0.2em]">Anomaly Report</span>
                 </div>
-                <div className="p-6">
+                <div className="p-6 space-y-8">
+                  {/* Current session */}
                   {csvHeaders.length > 0 || manualTransactions.length > 0 || csvOriginalFile ? (
                     <div className="space-y-5">
-                      <div className="flex items-center justify-between">
+                      <div className="flex items-center justify-between flex-wrap gap-2">
                         <p className="text-xs text-muted-foreground font-mono">
                           {(csvOriginalFile?.type === "application/pdf" || csvOriginalFile?.name.toLowerCase().endsWith(".pdf")) ? "1 PDF document" : `${csvRows.length + (csvHeaders.length > 0 ? 0 : manualTransactions.length)} row${(csvRows.length + manualTransactions.length) !== 1 ? "s" : ""} — click any cell to edit`}
                         </p>
-                        <Button disabled={anomaliesLoading || (csvRows.length === 0 && manualTransactions.length === 0 && !csvOriginalFile)} onClick={handleRunAnalysis}>
-                          {anomaliesLoading ? "Analyzing..." : "Run Analysis"}
-                        </Button>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <Button disabled={anomaliesLoading || (csvRows.length === 0 && manualTransactions.length === 0 && !csvOriginalFile)} onClick={handleRunAnalysis}>
+                            {anomaliesLoading ? "Analyzing..." : "Run Analysis"}
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="border-dashed"
+                            disabled={csvSaveLoading || (csvRows.length === 0 && manualTransactions.length === 0)}
+                            onClick={handleSaveTransactionLog}
+                          >
+                            {csvSaveLoading ? "Saving..." : "Save transaction log"}
+                          </Button>
+                        </div>
                       </div>
+                      {csvSaveMessage && (
+                        <p className={`text-[11px] font-mono ${csvSaveMessage.startsWith("Saved") ? "text-green-600" : "text-destructive"}`}>
+                          {csvSaveMessage}
+                        </p>
+                      )}
                       {csvHeaders.length > 0 && <CSVDataTable headers={csvHeaders} rows={csvRows} onChange={setCsvRows} />}
                       {anomaliesData && <ResultsTable type="anomalies" data={anomaliesData} />}
                     </div>
@@ -708,10 +1035,78 @@ export default function Dashboard() {
                   >
                     {(sanctionsLoading || geoRiskLoading) ? "Scanning..." : "Run Scan"}
                   </Button>
+
+                  {(uploadedSanctionsEntities.length > 0 || manualEntities.length > 0) && (
+                    <div className="space-y-2">
+                      <input
+                        type="text"
+                        value={saveEntityLogName}
+                        onChange={(e) => setSaveEntityLogName(e.target.value)}
+                        placeholder="Name this list (optional)"
+                        className="w-full border border-border bg-background px-2.5 py-1.5 text-xs text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-foreground transition-colors"
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="w-full border-dashed"
+                        disabled={entitySaveLoading}
+                        onClick={handleSaveEntityList}
+                      >
+                        {entitySaveLoading ? "Saving..." : "Save entity list"}
+                      </Button>
+                    </div>
+                  )}
+                  {entitySaveMessage && (
+                    <p className={`text-[11px] font-mono text-center ${entitySaveMessage.startsWith("Saved") ? "text-green-600" : "text-destructive"}`}>
+                      {entitySaveMessage}
+                    </p>
+                  )}
+
+                  <div className="space-y-2 pt-2 border-t border-border">
+                    <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Your saved entity lists</p>
+                    {savedEntityLogsLoading ? (
+                      <p className="text-[11px] text-muted-foreground font-mono">Loading...</p>
+                    ) : savedEntityLogs.length === 0 ? (
+                      <p className="text-[11px] text-muted-foreground">No saved lists yet. Save above to keep a record.</p>
+                    ) : (
+                      <ul className="space-y-1.5 max-h-36 overflow-auto">
+                        {savedEntityLogs.map((log) => {
+                          const entities = Array.isArray(log.entities) ? (log.entities as { description: string; country: string }[]) : [];
+                          const count = entities.length;
+                          const label = (log.name || `Saved ${new Date(log.created_at).toLocaleDateString("en-CA", { month: "short", day: "numeric", year: "numeric" })}`).trim();
+                          return (
+                            <li key={log.id} className="flex items-center justify-between gap-2 border border-border px-2.5 py-1.5 bg-background">
+                              <div className="min-w-0 flex-1">
+                                <p className="text-xs font-medium text-foreground truncate">{label}</p>
+                                <p className="text-[10px] text-muted-foreground">{count} entit{count !== 1 ? "ies" : "y"}</p>
+                              </div>
+                              <div className="flex items-center gap-1 shrink-0">
+                                <button type="button" onClick={() => handleLoadSavedEntityLog(log)} className="text-[10px] uppercase tracking-wider border border-border hover:border-foreground px-2 py-1 text-foreground transition-colors">Load</button>
+                                <button type="button" onClick={() => handleDeleteSavedEntityLog(log.id)} className="text-muted-foreground hover:text-destructive transition-colors" title="Delete">✕</button>
+                              </div>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </div>
                 </div>
 
                 {/* Right: Report */}
                 <div className="bg-card p-6 space-y-6 overflow-auto">
+                  {(uploadedSanctionsEntities.length > 0 || manualEntities.length > 0) && (
+                    <div className="flex items-center justify-end gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="border-dashed"
+                        disabled={entitySaveLoading}
+                        onClick={handleSaveEntityList}
+                      >
+                        {entitySaveLoading ? "Saving..." : "Save entity list"}
+                      </Button>
+                    </div>
+                  )}
                   {sanctionsData && (
                     <div>
                       <ResultsTable type="sanctions" data={sanctionsData} />
