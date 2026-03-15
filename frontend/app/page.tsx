@@ -144,7 +144,32 @@ export default function Dashboard() {
   const [csvRows, setCsvRows] = useState<Record<string, string>[]>([]);
   const [csvFileName, setCsvFileName] = useState<string | undefined>();
 
+  type ManualTx = {
+    customer_name: string;
+    timestamp: string;
+    amount: string;
+    currency: string;
+    payment_method: string;
+    card_brand: string;
+    card_last4: string;
+    ip_country: string;
+    ip_is_vpn: boolean;
+    device_type: string;
+    cvv_match: boolean;
+    address_match: boolean;
+  };
+  const emptyTx: ManualTx = {
+    customer_name: "", timestamp: "", amount: "", currency: "CAD",
+    payment_method: "credit_card", card_brand: "Visa", card_last4: "",
+    ip_country: "", ip_is_vpn: false, device_type: "desktop",
+    cvv_match: true, address_match: true,
+  };
+  const [manualTransactions, setManualTransactions] = useState<ManualTx[]>([]);
+  const [manualTxInput, setManualTxInput] = useState<ManualTx>(emptyTx);
+
   const [sanctionsFile, setSanctionsFile] = useState<File | null>(null);
+  const [manualEntities, setManualEntities] = useState<{ description: string; country: string }[]>([]);
+  const [manualInput, setManualInput] = useState({ description: "", country: "" });
 
   const [geoCountries, setGeoCountries] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -161,12 +186,63 @@ export default function Dashboard() {
     });
   }
 
+  function addManualTransaction() {
+    if (!manualTxInput.customer_name.trim()) return;
+    setManualTransactions((prev) => [...prev, {
+      ...manualTxInput,
+      timestamp: manualTxInput.timestamp || new Date().toISOString().replace("T", " ").slice(0, 19),
+    }]);
+    setManualTxInput(emptyTx);
+  }
+
+  function removeManualTransaction(index: number) {
+    setManualTransactions((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  function addManualEntity() {
+    const description = manualInput.description.trim();
+    if (!description) return;
+    setManualEntities((prev) => [...prev, { description, country: manualInput.country.trim() }]);
+    setManualInput({ description: "", country: "" });
+  }
+
+  function removeManualEntity(index: number) {
+    setManualEntities((prev) => prev.filter((_, i) => i !== index));
+  }
+
   async function handleRunAnalysis() {
-    if (!csvHeaders.length || !csvRows.length) return;
+    if (!csvRows.length && !manualTransactions.length) return;
     setAnomaliesLoading(true);
     setError(null);
     try {
-      const file = rowsToCSVFile(csvHeaders, csvRows);
+      const TX_HEADERS = [
+        "transaction_id", "customer_name", "timestamp", "amount", "currency",
+        "payment_method", "card_last4", "card_brand", "ip_country", "ip_is_vpn",
+        "device_type", "cvv_match", "address_match",
+      ];
+      const headers = csvHeaders.length ? csvHeaders : TX_HEADERS;
+      const allRows: Record<string, string>[] = [
+        ...csvRows,
+        ...manualTransactions.map((t) => ({
+          transaction_id: crypto.randomUUID(),
+          customer_name: t.customer_name,
+          timestamp: t.timestamp,
+          amount: t.amount,
+          currency: t.currency,
+          payment_method: t.payment_method,
+          card_last4: t.card_last4,
+          card_brand: t.card_brand,
+          ip_country: t.ip_country,
+          ip_is_vpn: String(t.ip_is_vpn),
+          device_type: t.device_type,
+          cvv_match: String(t.cvv_match),
+          address_match: String(t.address_match),
+        })),
+      ];
+      // Sync merged data into table state so the report renders with all rows
+      setCsvHeaders(headers);
+      setCsvRows(allRows);
+      const file = rowsToCSVFile(headers, allRows);
       const data = await scanAnomalies(file);
       setAnomaliesData(data);
     } catch {
@@ -177,15 +253,38 @@ export default function Dashboard() {
   }
 
   async function handleSanctionsScan() {
-    if (!sanctionsFile) return;
+    if (!sanctionsFile && manualEntities.length === 0) return;
     setSanctionsLoading(true);
     setError(null);
     try {
-      const data = await scanSanctions(sanctionsFile);
+      // Collect entities from uploaded CSV (if any)
+      const allEntities: { description: string; country: string }[] = [];
+      if (sanctionsFile) {
+        const text = await sanctionsFile.text();
+        const lines = text.trim().split(/\r?\n/);
+        const hdrs = lines[0].split(",").map((h) => h.trim().replace(/^"|"$/g, "").toLowerCase());
+        const descIdx = hdrs.indexOf("description");
+        const countryIdx = hdrs.indexOf("country");
+        if (descIdx !== -1) {
+          for (const line of lines.slice(1)) {
+            const vals = line.split(",").map((v) => v.trim().replace(/^"|"$/g, ""));
+            const desc = vals[descIdx];
+            if (desc) allEntities.push({ description: desc, country: vals[countryIdx] ?? "" });
+          }
+        }
+      }
+      // Append manually entered entities
+      for (const e of manualEntities) allEntities.push(e);
+
+      const csvContent =
+        "description,country\n" +
+        allEntities.map((e) => `${e.description},${e.country}`).join("\n");
+      const fileToScan = new File([csvContent], "entities.csv", { type: "text/csv" });
+      const data = await scanSanctions(fileToScan);
       setSanctionsData(data);
       setActiveReport("sanctions");
-    } catch {
-      setError("Sanctions scan failed. Is the backend running?");
+    } catch (err) {
+      setError("Sanctions scan failed: " + String(err));
     } finally {
       setSanctionsLoading(false);
     }
@@ -300,9 +399,195 @@ export default function Dashboard() {
             </p>
           )}
 
+          {/* Divider */}
+          <div className="flex items-center gap-2">
+            <div className="flex-1 h-px bg-gray-100" />
+            <span className="text-[11px] text-gray-400">or add individually</span>
+            <div className="flex-1 h-px bg-gray-100" />
+          </div>
+
+          {/* Manual transaction form */}
+          <div className="space-y-2">
+            <div className="rounded-2xl bg-background/50 shadow-inner p-3 space-y-2">
+              {/* Row 1: Customer Name + Date */}
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-medium text-gray-400 uppercase tracking-wide">Customer Name</label>
+                  <input
+                    type="text"
+                    value={manualTxInput.customer_name}
+                    onChange={(e) => setManualTxInput((p) => ({ ...p, customer_name: e.target.value }))}
+                    placeholder="Jane Doe"
+                    className="w-full rounded-lg border-none bg-white/80 shadow-sm px-2.5 py-1.5 text-xs text-foreground placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-orange-500/40 transition-all"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-medium text-gray-400 uppercase tracking-wide">Date &amp; Time</label>
+                  <input
+                    type="datetime-local"
+                    value={manualTxInput.timestamp}
+                    onChange={(e) => setManualTxInput((p) => ({ ...p, timestamp: e.target.value }))}
+                    className="w-full rounded-lg border-none bg-white/80 shadow-sm px-2.5 py-1.5 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-orange-500/40 transition-all"
+                  />
+                </div>
+              </div>
+
+              {/* Row 2: Amount + Currency */}
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-medium text-gray-400 uppercase tracking-wide">Amount</label>
+                  <input
+                    type="number"
+                    value={manualTxInput.amount}
+                    onChange={(e) => setManualTxInput((p) => ({ ...p, amount: e.target.value }))}
+                    placeholder="0.00"
+                    className="w-full rounded-lg border-none bg-white/80 shadow-sm px-2.5 py-1.5 text-xs text-foreground placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-orange-500/40 transition-all"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-medium text-gray-400 uppercase tracking-wide">Currency</label>
+                  <select
+                    value={manualTxInput.currency}
+                    onChange={(e) => setManualTxInput((p) => ({ ...p, currency: e.target.value }))}
+                    className="w-full rounded-lg border-none bg-white/80 shadow-sm px-2.5 py-1.5 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-orange-500/40 transition-all"
+                  >
+                    {["CAD", "USD", "EUR", "GBP"].map((c) => <option key={c}>{c}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              {/* Row 3: Payment Method + Card Brand + Last 4 */}
+              <div className="grid grid-cols-3 gap-2">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-medium text-gray-400 uppercase tracking-wide">Payment</label>
+                  <select
+                    value={manualTxInput.payment_method}
+                    onChange={(e) => setManualTxInput((p) => ({ ...p, payment_method: e.target.value }))}
+                    className="w-full rounded-lg border-none bg-white/80 shadow-sm px-2.5 py-1.5 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-orange-500/40 transition-all"
+                  >
+                    {["credit_card", "debit", "cash", "bank_transfer"].map((m) => <option key={m} value={m}>{m.replace("_", " ")}</option>)}
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-medium text-gray-400 uppercase tracking-wide">Card Brand</label>
+                  <select
+                    value={manualTxInput.card_brand}
+                    onChange={(e) => setManualTxInput((p) => ({ ...p, card_brand: e.target.value }))}
+                    className="w-full rounded-lg border-none bg-white/80 shadow-sm px-2.5 py-1.5 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-orange-500/40 transition-all"
+                  >
+                    {["Visa", "Mastercard", "Amex", "Discover"].map((b) => <option key={b}>{b}</option>)}
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-medium text-gray-400 uppercase tracking-wide">Last 4</label>
+                  <input
+                    type="text"
+                    maxLength={4}
+                    value={manualTxInput.card_last4}
+                    onChange={(e) => setManualTxInput((p) => ({ ...p, card_last4: e.target.value.replace(/\D/g, "").slice(0, 4) }))}
+                    placeholder="0000"
+                    className="w-full rounded-lg border-none bg-white/80 shadow-sm px-2.5 py-1.5 text-xs text-foreground placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-orange-500/40 transition-all font-mono"
+                  />
+                </div>
+              </div>
+
+              {/* Row 4: IP Country + Device Type */}
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-medium text-gray-400 uppercase tracking-wide">IP Country</label>
+                  <input
+                    type="text"
+                    value={manualTxInput.ip_country}
+                    onChange={(e) => setManualTxInput((p) => ({ ...p, ip_country: e.target.value.toUpperCase().slice(0, 2) }))}
+                    placeholder="CA"
+                    className="w-full rounded-lg border-none bg-white/80 shadow-sm px-2.5 py-1.5 text-xs text-foreground placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-orange-500/40 transition-all uppercase"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-medium text-gray-400 uppercase tracking-wide">Device</label>
+                  <select
+                    value={manualTxInput.device_type}
+                    onChange={(e) => setManualTxInput((p) => ({ ...p, device_type: e.target.value }))}
+                    className="w-full rounded-lg border-none bg-white/80 shadow-sm px-2.5 py-1.5 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-orange-500/40 transition-all"
+                  >
+                    {["desktop", "mobile", "tablet"].map((d) => <option key={d}>{d}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              {/* Row 5: Flags */}
+              <div className="flex items-center gap-4 pt-1">
+                <label className="flex items-center gap-1.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={manualTxInput.cvv_match}
+                    onChange={(e) => setManualTxInput((p) => ({ ...p, cvv_match: e.target.checked }))}
+                    className="rounded accent-orange-500"
+                  />
+                  <span className="text-xs text-gray-600">CVV Match</span>
+                </label>
+                <label className="flex items-center gap-1.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={manualTxInput.address_match}
+                    onChange={(e) => setManualTxInput((p) => ({ ...p, address_match: e.target.checked }))}
+                    className="rounded accent-orange-500"
+                  />
+                  <span className="text-xs text-gray-600">Address Match</span>
+                </label>
+                <label className="flex items-center gap-1.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={manualTxInput.ip_is_vpn}
+                    onChange={(e) => setManualTxInput((p) => ({ ...p, ip_is_vpn: e.target.checked }))}
+                    className="rounded accent-orange-500"
+                  />
+                  <span className="text-xs text-gray-600">VPN</span>
+                </label>
+              </div>
+            </div>
+
+            <button
+              onClick={addManualTransaction}
+              disabled={!manualTxInput.customer_name.trim()}
+              className="w-full rounded-xl bg-orange-100 hover:bg-orange-200 disabled:opacity-40 disabled:cursor-not-allowed text-orange-700 font-medium text-xs py-2 transition-colors"
+            >
+              + Add Transaction
+            </button>
+
+            {manualTransactions.length > 0 && (
+              <div className="rounded-2xl overflow-hidden border border-gray-100">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="bg-gray-50 text-gray-400 uppercase tracking-wide">
+                      <th className="px-3 py-2 text-left font-medium">Name</th>
+                      <th className="px-3 py-2 text-left font-medium">Payment</th>
+                      <th className="px-3 py-2 text-right font-medium">Amount</th>
+                      <th className="w-8" />
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {manualTransactions.map((t, i) => (
+                      <tr key={i} className="bg-white hover:bg-gray-50/50 transition-colors">
+                        <td className="px-3 py-2 font-medium text-gray-800 truncate max-w-[90px]">{t.customer_name}</td>
+                        <td className="px-3 py-2 text-gray-500">{t.card_brand} · {t.payment_method.replace("_", " ")}</td>
+                        <td className="px-3 py-2 text-right font-mono text-gray-700">
+                          {t.amount ? `${t.currency} ${Number(t.amount).toLocaleString()}` : <span className="text-gray-300">—</span>}
+                        </td>
+                        <td className="px-2 py-2 text-right">
+                          <button onClick={() => removeManualTransaction(i)} className="text-gray-300 hover:text-red-400 transition-colors">✕</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
           <Button
             className="w-full rounded-xl bg-orange-500 hover:bg-orange-600 text-white text-sm"
-            disabled={anomaliesLoading || csvRows.length === 0}
+            disabled={anomaliesLoading || (csvRows.length === 0 && manualTransactions.length === 0)}
             onClick={() => { setActiveReport("anomalies"); handleRunAnalysis(); }}
           >
             {anomaliesLoading ? "Analyzing…" : "Run Analysis"}
@@ -322,15 +607,82 @@ export default function Dashboard() {
           </div>
 
           <DropZone
-            hint="name, country, registration_number"
+            hint="description, country"
             onFile={(f) => { setSanctionsFile(f); setError(null); }}
             onRemove={() => { setSanctionsFile(null); setSanctionsData(null); setError(null); }}
             fileName={sanctionsFile?.name}
           />
 
+          {/* Divider */}
+          <div className="flex items-center gap-2">
+            <div className="flex-1 h-px bg-gray-100" />
+            <span className="text-[11px] text-gray-400">or add individually</span>
+            <div className="flex-1 h-px bg-gray-100" />
+          </div>
+
+          {/* Manual entity entry */}
+          <div className="space-y-2">
+            <div className="grid grid-cols-[1fr_auto_auto] gap-2 items-center">
+              <input
+                type="text"
+                value={manualInput.description}
+                onChange={(e) => setManualInput((p) => ({ ...p, description: e.target.value }))}
+                onKeyDown={(e) => { if (e.key === "Enter") addManualEntity(); }}
+                placeholder="Entity name"
+                className="rounded-xl border-none bg-background/50 shadow-inner px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all min-w-0"
+              />
+              <input
+                type="text"
+                value={manualInput.country}
+                onChange={(e) => setManualInput((p) => ({ ...p, country: e.target.value }))}
+                onKeyDown={(e) => { if (e.key === "Enter") addManualEntity(); }}
+                placeholder="Country"
+                className="w-20 rounded-xl border-none bg-background/50 shadow-inner px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
+              />
+              <button
+                onClick={addManualEntity}
+                disabled={!manualInput.description.trim()}
+                className="h-8 w-8 rounded-xl bg-blue-500 hover:bg-blue-600 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center transition-colors shadow-sm"
+                title="Add entity"
+              >
+                <span className="text-white text-base leading-none font-light">+</span>
+              </button>
+            </div>
+
+            {manualEntities.length > 0 && (
+              <div className="rounded-2xl overflow-hidden border border-gray-100">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="bg-gray-50 text-gray-400 uppercase tracking-wide">
+                      <th className="px-3 py-2 text-left font-medium">Entity</th>
+                      <th className="px-3 py-2 text-left font-medium">Country</th>
+                      <th className="w-8" />
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {manualEntities.map((e, i) => (
+                      <tr key={i} className="bg-white hover:bg-gray-50/50 transition-colors">
+                        <td className="px-3 py-2 font-medium text-gray-800 truncate max-w-[120px]">{e.description}</td>
+                        <td className="px-3 py-2 text-gray-500">{e.country || <span className="text-gray-300">—</span>}</td>
+                        <td className="px-2 py-2 text-right">
+                          <button
+                            onClick={() => removeManualEntity(i)}
+                            className="text-gray-300 hover:text-red-400 transition-colors"
+                          >
+                            ✕
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
           <Button
             className="w-full rounded-xl bg-blue-500 hover:bg-blue-600 text-white text-sm"
-            disabled={sanctionsLoading || !sanctionsFile}
+            disabled={sanctionsLoading || (!sanctionsFile && manualEntities.length === 0)}
             onClick={handleSanctionsScan}
           >
             {sanctionsLoading ? "Scanning…" : "Scan Entities"}
@@ -376,8 +728,8 @@ export default function Dashboard() {
               key={tab.id}
               onClick={() => setActiveReport(tab.id)}
               className={`px-4 py-2 text-sm font-medium rounded-t-xl transition-colors ${activeReport === tab.id
-                  ? "text-gray-900 border-b-2 border-gray-900"
-                  : "text-gray-400 hover:text-gray-600"
+                ? "text-gray-900 border-b-2 border-gray-900"
+                : "text-gray-400 hover:text-gray-600"
                 }`}
             >
               {tab.label}
@@ -389,21 +741,21 @@ export default function Dashboard() {
           {/* Anomaly report */}
           {activeReport === "anomalies" && (
             <div className="space-y-5">
-              {csvHeaders.length > 0 ? (
+              {csvHeaders.length > 0 || manualTransactions.length > 0 ? (
                 <>
                   <div className="flex items-center justify-between">
                     <p className="text-sm text-gray-500">
-                      {csvRows.length} row{csvRows.length !== 1 ? "s" : ""} — click any cell to edit
+                      {csvRows.length + (csvHeaders.length > 0 ? 0 : manualTransactions.length)} row{(csvRows.length + manualTransactions.length) !== 1 ? "s" : ""} — click any cell to edit
                     </p>
                     <Button
                       className="rounded-xl bg-orange-500 hover:bg-orange-600 text-white text-sm"
-                      disabled={anomaliesLoading || csvRows.length === 0}
+                      disabled={anomaliesLoading || (csvRows.length === 0 && manualTransactions.length === 0)}
                       onClick={handleRunAnalysis}
                     >
                       {anomaliesLoading ? "Analyzing…" : "Run Analysis"}
                     </Button>
                   </div>
-                  <CSVDataTable headers={csvHeaders} rows={csvRows} onChange={setCsvRows} />
+                  {csvHeaders.length > 0 && <CSVDataTable headers={csvHeaders} rows={csvRows} onChange={setCsvRows} />}
                   {anomaliesData && <ResultsTable type="anomalies" data={anomaliesData} />}
                 </>
               ) : (

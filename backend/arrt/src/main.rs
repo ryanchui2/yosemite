@@ -62,6 +62,7 @@ async fn main() {
         .route("/api/fraud/document", post(routes::document::analyze))
         .route("/api/fraud/pipeline", post(routes::pipeline::ingest))
         .route("/api/risk/business", post(routes::risk::business_risk))
+        .route("/api/sanctions/scan", post(routes::sanctions::scan))
         .with_state(state)
         .layer(cors);
 

@@ -130,7 +130,26 @@ export interface GeoRiskResponse {
 }
 
 export async function scanSanctions(file: File): Promise<SanctionsResponse> {
-  return { scan_id: "stub", total_entities: 0, flagged: 0, results: [] };
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/a3ba57d6-4434-4c97-9efb-bd3955e640d5', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'api.ts:scanSanctions', message: 'STUB — not calling backend', data: { fileName: file.name, fileSize: file.size }, timestamp: Date.now(), hypothesisId: 'H-B' }) }).catch(() => { });
+  // #endregion
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/a3ba57d6-4434-4c97-9efb-bd3955e640d5', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'api.ts:scanSanctions:posting', message: 'posting to backend', data: { fileName: file.name, url: `${BACKEND_URL}/api/sanctions/scan` }, timestamp: Date.now(), hypothesisId: 'H-B-fix' }) }).catch(() => { });
+  // #endregion
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(`${BACKEND_URL}/api/sanctions/scan`, {
+    method: "POST",
+    body: form,
+  });
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/a3ba57d6-4434-4c97-9efb-bd3955e640d5', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'api.ts:scanSanctions:response', message: 'got response', data: { status: res.status, ok: res.ok }, timestamp: Date.now(), hypothesisId: 'H-B-fix' }) }).catch(() => { });
+  // #endregion
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Sanctions scan failed: ${res.status} — ${err}`);
+  }
+  return res.json();
 }
 
 export async function scanAnomalies(file: File): Promise<AnomaliesResponse> {

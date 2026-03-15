@@ -4,4 +4,5 @@ pub mod fraud;
 pub mod fraud_report;
 pub mod pipeline;
 pub mod risk;
+pub mod sanctions;
 pub mod transactions;
