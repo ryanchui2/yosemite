@@ -21,7 +21,7 @@ export function ProtectionScore({ score }: Props) {
   const accent = s >= 75 ? "#22c55e" : s >= 50 ? "#f59e0b" : "#ef4444";
 
   return (
-    <div className="flex flex-col items-center justify-center gap-2 h-full select-none">
+    <div className="flex flex-col items-center gap-2 select-none">
       <p className="text-[10px] font-medium text-muted-foreground tracking-[0.2em] uppercase">
         Protection Score
       </p>
