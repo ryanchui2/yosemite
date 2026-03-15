@@ -1,10 +1,10 @@
 type RiskLevel = "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
 
 const styles: Record<RiskLevel, string> = {
-  CRITICAL: "border-foreground bg-foreground text-background",
-  HIGH:     "border-foreground/60 text-foreground",
-  MEDIUM:   "border-foreground/30 text-foreground/70",
-  LOW:      "border-foreground/20 text-foreground/50",
+  CRITICAL: "border-red-500 bg-red-500 text-white",
+  HIGH:     "border-orange-400 text-orange-500",
+  MEDIUM:   "border-yellow-400 text-yellow-600",
+  LOW:      "border-green-400 text-green-600",
 };
 
 export function RiskBadge({ level }: { level: RiskLevel }) {

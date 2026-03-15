@@ -97,13 +97,23 @@ export function ResultsTable(props: Props) {
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
-                      <div className="w-16 bg-accent h-px relative">
+                      <div className="w-16 bg-accent h-1 rounded-full relative">
                         <div
-                          className="bg-foreground h-px absolute top-0 left-0"
+                          className={`h-1 rounded-full absolute top-0 left-0 ${
+                            r.anomaly_score >= 0.8 ? "bg-red-500" :
+                            r.anomaly_score >= 0.6 ? "bg-orange-400" :
+                            r.anomaly_score >= 0.4 ? "bg-yellow-400" :
+                            "bg-green-400"
+                          }`}
                           style={{ width: `${r.anomaly_score * 100}%` }}
                         />
                       </div>
-                      <span className="text-[10px] text-muted-foreground font-mono">{(r.anomaly_score * 100).toFixed(0)}%</span>
+                      <span className={`text-[10px] font-mono ${
+                        r.anomaly_score >= 0.8 ? "text-red-500" :
+                        r.anomaly_score >= 0.6 ? "text-orange-400" :
+                        r.anomaly_score >= 0.4 ? "text-yellow-500" :
+                        "text-green-500"
+                      }`}>{(r.anomaly_score * 100).toFixed(0)}%</span>
                     </div>
                   </td>
                   <td className="px-4 py-3">
@@ -141,9 +151,14 @@ export function ResultsTable(props: Props) {
               <span>Risk score</span>
               <span className="font-mono text-foreground">{r.risk_score}/100</span>
             </div>
-            <div className="w-full bg-accent h-px relative">
+            <div className="w-full bg-accent h-1 rounded-full relative">
               <div
-                className="bg-foreground h-px absolute top-0 left-0"
+                className={`h-1 rounded-full absolute top-0 left-0 ${
+                  r.risk_score >= 80 ? "bg-red-500" :
+                  r.risk_score >= 60 ? "bg-orange-400" :
+                  r.risk_score >= 40 ? "bg-yellow-400" :
+                  "bg-green-400"
+                }`}
                 style={{ width: `${r.risk_score}%` }}
               />
             </div>

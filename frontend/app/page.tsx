@@ -326,7 +326,7 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen bg-background text-foreground font-sans">
       {/* Floating header */}
-      <header className="sticky top-0 z-50 flex items-center justify-between mx-4 mt-3 px-5 py-3 bg-gray-100/80 backdrop-blur-md border border-border font-heading">
+      <header className="fixed top-3 inset-x-4 z-50 flex items-center justify-between px-5 py-3 bg-background/80 border border-border font-heading">
         <div className="flex items-center gap-3">
           <Image src="/yosemite_logo.png" alt="yosemite logo" width={32} height={32} />
           <span className="text-[17px] font-semibold tracking-tight text-foreground">yosemite</span>
@@ -343,9 +343,9 @@ export default function Dashboard() {
         </div>
       </header>
 
-      <div className="flex min-h-[calc(100vh-53px)]">
+      <div className="flex min-h-screen pt-20">
         {/* Sidebar */}
-        <aside className="w-56 flex flex-col justify-between p-4">
+        <aside className="fixed top-20 left-0 w-56 h-[calc(100vh-5rem)] flex flex-col justify-between p-4">
           <nav className="flex flex-col gap-2">
             {sidebarItems.map((item) => (
               <button
@@ -364,7 +364,7 @@ export default function Dashboard() {
         </aside>
 
         {/* Main content */}
-        <main className="flex-1 p-6 overflow-auto">
+        <main className="flex-1 p-6 overflow-auto ml-56">
           {error && (
             <div className="border border-destructive p-3 text-sm text-destructive font-mono mb-6">
               {error}
