@@ -31,6 +31,7 @@ export function ResultsTable(props: Props) {
             <thead className="bg-accent text-[10px] text-muted-foreground uppercase tracking-wider">
               <tr>
                 <th className="px-4 py-2.5 text-left font-medium">Entity</th>
+                <th className="px-4 py-2.5 text-left font-medium">Country</th>
                 <th className="px-4 py-2.5 text-left font-medium">Sanctions</th>
                 <th className="px-4 py-2.5 text-left font-medium">Country risk</th>
                 <th className="px-4 py-2.5 text-left font-medium">List / Action</th>
@@ -40,6 +41,7 @@ export function ResultsTable(props: Props) {
               {data.results.map((r, i) => (
                 <tr key={i} className="hover:bg-accent/50">
                   <td className="px-4 py-3 font-medium text-foreground">{r.uploaded_name}</td>
+                  <td className="px-4 py-3 text-muted-foreground">{r.country ?? "—"}</td>
                   <td className="px-4 py-3">
                     <RiskBadge level={r.risk_level} />
                   </td>

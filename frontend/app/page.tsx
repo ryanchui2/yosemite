@@ -430,29 +430,6 @@ export default function Dashboard() {
               .map((s) => Number(s))
           : [];
         const validAmounts = parsedAmounts.filter((n) => !Number.isNaN(n));
-        const maxParsed = validAmounts.length
-          ? Math.max(...validAmounts)
-          : null;
-        fetch(
-          "http://127.0.0.1:7242/ingest/a3ba57d6-4434-4c97-9efb-bd3955e640d5",
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              location: "page.tsx:handleAnomalyFile",
-              message: "CSV parsed after drop",
-              hypothesisId: ["anomaly_amount"],
-              data: {
-                rowCount: newRows.length,
-                amountKey: amountKey ?? null,
-                sampleAmounts: validAmounts.slice(0, 5),
-                maxParsedAmount: maxParsed,
-              },
-              timestamp: Date.now(),
-            }),
-          },
-        ).catch(() => {});
-        // #endregion
         setCsvHeaders((prevHeaders) => {
           const merged = prevHeaders.length ? [...prevHeaders] : [];
           for (const h of newHeaders) {
@@ -551,40 +528,6 @@ export default function Dashboard() {
       })),
     ];
     const totalRows = allRows.length;
-    // #region agent log
-    const manualAmounts = manualTransactions
-      .map((t) => t.amount)
-      .filter(Boolean)
-      .map((s) => Number(s));
-    const validManualAmounts = manualAmounts.filter((n) => !Number.isNaN(n));
-    const allAmounts = allRows
-      .map((r) => r.amount)
-      .filter(Boolean)
-      .map((s) => Number(s));
-    const validAllAmounts = allAmounts.filter((n) => !Number.isNaN(n));
-    fetch("http://127.0.0.1:7242/ingest/a3ba57d6-4434-4c97-9efb-bd3955e640d5", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        location: "page.tsx:handleRunAnalysis",
-        message: "payload built for pipeline (CSV + add transaction)",
-        hypothesisId: ["anomaly_amount", "manual_tx"],
-        data: {
-          csvRowCount: csvRows.length,
-          manualTransactionCount: manualTransactions.length,
-          totalRows,
-          manualAmountsSample: validManualAmounts.slice(0, 5),
-          maxManualAmount: validManualAmounts.length
-            ? Math.max(...validManualAmounts)
-            : null,
-          maxAmountInPayload: validAllAmounts.length
-            ? Math.max(...validAllAmounts)
-            : null,
-        },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
     // Only do incremental (skip already-scanned rows) when we have a prior run and new rows were added
     const doFullScan =
       lastScannedCount === 0 || lastScannedCount >= totalRows || !anomaliesData;

@@ -46,43 +46,13 @@ export async function refreshAccessToken(): Promise<string | null> {
       credentials: "include",
     });
     if (!res.ok) {
-      // #region agent log
-      if (typeof fetch !== "undefined") {
-        fetch("http://127.0.0.1:7242/ingest/a3ba57d6-4434-4c97-9efb-bd3955e640d5", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            location: "auth.ts:refreshAccessToken",
-            message: "refresh failed",
-            data: { status: res.status },
-            timestamp: Date.now(),
-            hypothesisId: "H2",
-          }),
-        }).catch(() => { });
-      }
-      // #endregion
       setAccessToken(null);
       return null;
     }
     const data: { access_token: string } = await res.json();
     setAccessToken(data.access_token);
     return data.access_token;
-  } catch (e) {
-    // #region agent log
-    if (typeof fetch !== "undefined") {
-      fetch("http://127.0.0.1:7242/ingest/a3ba57d6-4434-4c97-9efb-bd3955e640d5", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          location: "auth.ts:refreshAccessToken-catch",
-          message: "refresh threw",
-          data: { err: String(e) },
-          timestamp: Date.now(),
-          hypothesisId: "H2",
-        }),
-      }).catch(() => { });
-    }
-    // #endregion
+  } catch {
     setAccessToken(null);
     return null;
   }
