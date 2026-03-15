@@ -48,13 +48,13 @@ function buildFallbackSummary(results: FraudResult[], totalScanned: number): Fra
 function OverviewSection({ title, items }: { title: string; items: string[] }) {
   return (
     <section className="space-y-1.5">
-      <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+      <p className="text-[10px] font-medium uppercase tracking-[0.15em] text-muted-foreground">
         {title}
       </p>
       <ul className="space-y-1.5">
         {items.map((item, index) => (
-          <li key={`${title}-${index}`} className="flex items-start gap-2 text-xs leading-relaxed text-foreground/90">
-            <span className="mt-1 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-orange-400" />
+          <li key={`${title}-${index}`} className="flex items-start gap-2 text-xs leading-relaxed text-foreground/80">
+            <span className="mt-1.5 h-1 w-1 flex-shrink-0 bg-foreground" />
             <span>{item}</span>
           </li>
         ))}
@@ -68,11 +68,11 @@ export function RiskOverview({ results, totalScanned, summary }: Props) {
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-3">
-      <p className="text-sm font-semibold text-muted-foreground tracking-wide uppercase">
+      <p className="text-[10px] font-medium text-muted-foreground tracking-[0.2em] uppercase">
         Risk Overview
       </p>
 
-      <div className="rounded-2xl bg-background/50 px-3 py-2 text-[11px] text-muted-foreground shadow-inner">
+      <div className="border border-border px-3 py-2 text-[11px] text-muted-foreground font-mono">
         Based on {content.report_count > 0 ? `${content.report_count} flagged transaction${content.report_count > 1 ? "s" : ""} from the latest fraud scan` : "the latest fraud analysis"}
         {content.ai_generated ? " · AI summary" : " · fallback summary"}
       </div>
@@ -83,7 +83,7 @@ export function RiskOverview({ results, totalScanned, summary }: Props) {
         <OverviewSection title="Advice for improvement" items={content.improvement_advice} />
       </div>
 
-      <div className="rounded-2xl border border-amber-200/70 bg-amber-50/80 px-3 py-2 text-[11px] leading-relaxed text-amber-800">
+      <div className="border border-border px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
         <div className="flex items-start gap-2">
           <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
           <p>{content.disclaimer}</p>

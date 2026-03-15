@@ -10,7 +10,6 @@ interface Props {
 
 export function PDFExport({ sanctionsData, anomaliesData, geoRiskData }: Props) {
   function handleExport() {
-    // Build plain-text report, then trigger browser print-to-PDF
     const lines: string[] = [
       "yosemite — Compliance Report",
       `Generated: ${new Date().toLocaleString()}`,
@@ -58,7 +57,7 @@ export function PDFExport({ sanctionsData, anomaliesData, geoRiskData }: Props) 
   return (
     <button
       onClick={handleExport}
-      className="px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50 text-gray-700"
+      className="px-4 py-1.5 text-[10px] uppercase tracking-wider border border-border hover:border-foreground/40 text-foreground transition-colors font-medium"
     >
       Export PDF
     </button>

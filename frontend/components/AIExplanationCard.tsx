@@ -13,13 +13,13 @@ export function AIExplanationCard({ explanation }: AIExplanationCardProps) {
     <div className="mt-2">
       <button
         onClick={() => setOpen(!open)}
-        className="text-xs text-blue-600 hover:underline flex items-center gap-1"
+        className="text-[10px] text-muted-foreground hover:text-foreground flex items-center gap-1 uppercase tracking-wider transition-colors"
       >
         {open ? "Hide" : "Show"} AI explanation
-        <span className="text-gray-400">{open ? "▲" : "▼"}</span>
+        <span>{open ? "—" : "+"}</span>
       </button>
       {open && (
-        <div className="mt-2 p-3 bg-blue-50 border border-blue-100 rounded text-xs text-gray-700 leading-relaxed">
+        <div className="mt-2 p-3 border border-border text-xs text-foreground/70 leading-relaxed">
           {explanation}
         </div>
       )}
