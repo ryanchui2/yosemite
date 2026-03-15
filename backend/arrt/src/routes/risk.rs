@@ -12,7 +12,7 @@ pub async fn business_risk(
     let countries = payload.countries.clone().unwrap_or_default();
 
     let (sanctions_hits, conflict_events) = tokio::join!(
-        open_sanctions::search(&state.http, &payload.business_description),
+        open_sanctions::search(&state.http, &payload.business_description, &state.opensanctions_api_key),
         ucdp::get_conflicts(&state.http, &countries),
     );
 

@@ -192,6 +192,52 @@ pub struct GeoRiskResponse {
     pub results: Vec<GeoRiskResult>,
 }
 
+// ── Entity Investigation ──────────────────────────────────────────────────────
+
+#[derive(Deserialize)]
+pub struct EntityInvestigateRequest {
+    pub entity_name: String,
+}
+
+#[derive(Serialize)]
+pub struct EntityFraudSummary {
+    pub transaction_count: usize,
+    pub flagged_count: usize,
+    pub highest_risk_score: u32,
+    pub risk_level: String,
+    pub top_triggered_rules: Vec<String>,
+}
+
+#[derive(Serialize)]
+pub struct EntitySanctionsSummary {
+    pub match_found: bool,
+    pub matched_name: Option<String>,
+    pub confidence: Option<u32>,
+    pub sanctions_list: Option<String>,
+    pub reason: Option<String>,
+    pub risk_level: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct EntityGeoRisk {
+    pub country: Option<String>,
+    pub risk_score: Option<u32>,
+    pub risk_level: Option<String>,
+    pub ai_briefing: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct EntityInvestigationResponse {
+    pub entity_name: String,
+    pub composite_risk_score: u32,
+    pub composite_risk_level: String,
+    pub fraud: EntityFraudSummary,
+    pub sanctions: EntitySanctionsSummary,
+    pub geo_risk: EntityGeoRisk,
+    pub ai_summary: String,
+    pub recommended_action: String,
+}
+
 // ── Pipeline ──────────────────────────────────────────────────────────────────
 
 /// Outcome for a single transaction processed by the pipeline.

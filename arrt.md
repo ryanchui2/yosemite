@@ -1,478 +1,384 @@
-# ShieldAI — GenAI Genesis 2026 (FINAL PLAN)
+# ShieldAI — Compliance Intelligence Platform
 
-> **Compliance intelligence for small businesses.** Sanctions screening, transaction anomaly detection, and geopolitical risk monitoring — powered by AI, built for the businesses that can't afford a compliance department.
-
----
-
-## Tech Stack (Updated)
-
-| Layer | Technology | Why |
-|-------|-----------|-----|
-| **Frontend** | Next.js 14 (App Router) + TypeScript + Tailwind | Fast to build, you know it cold |
-| **Backend** | Rust (Axum) | Performance flex, impressive to judges, strong type safety |
-| **Database** | Render (hosted Postgres) | Reliable hosted Postgres, easy env var config |
-| **ML/Anomaly** | Python micro-service OR Rust `smartcore` crate | Isolation Forest for anomaly detection |
-| **Fuzzy Matching** | `strsim` crate (Rust) | Jaro-Winkler / Levenshtein for sanctions name matching |
-| **AI Explanations** | Gemini API (Google AI Studio, free tier) | 15 RPM free, 1M tokens/day |
-| **Sanctions Data** | OpenSanctions (`default` dataset) | 300K+ sanctioned entities, free download |
-| **Conflict Data** | UCDP API (Uppsala) | Free REST API, no key needed, clean JSON |
-| **Deployment** | Vercel (frontend) + Railway/Shuttle (Rust backend) | Free tier, fast |
-
-### Key Change: Rust Backend
-
-Rust is a bold call for a hackathon. Here's how to make it work without slowing down:
-
-**Use these crates:**
-- `axum` — HTTP server (fast, ergonomic Rust web framework built on Tokio)
-- `serde` / `serde_json` — JSON serialization
-- `csv` — CSV parsing
-- `strsim` — fuzzy string matching (Jaro-Winkler, Levenshtein)
-- `reqwest` — HTTP client for Gemini API + UCDP API calls
-- `tokio` — async runtime
-- `sqlx` — async Postgres driver (connects to Render Postgres)
-- `uuid` — scan IDs
-- `chrono` — timestamps
-- `smartcore` — ML (Isolation Forest) OR call a Python sidecar
-
-**Realistic assessment:** The Rust backend person needs to be comfortable with Rust. If the team has one strong Rust dev, this works and is a huge differentiator. If nobody is confident in Rust, the Isolation Forest ML piece can be a tiny Python FastAPI sidecar that the Rust backend calls — judges won't penalize a polyglot architecture, they'll respect it.
+> **Fraud detection and compliance intelligence for small businesses.** Transaction fraud scoring, sanctions screening, anomaly detection, document analysis, and geopolitical risk monitoring — powered by AI, built for businesses that can't afford a compliance department.
 
 ---
 
-## Architecture (Updated)
+## Tech Stack
 
-```
+| Layer | Technology | Notes |
+| ----- | ---------- | ----- |
+| **Frontend** | Next.js 19 (App Router) + TypeScript + Tailwind CSS | Single-page dashboard with report tabs |
+| **Backend** | Rust (Axum 0.8) + Tokio | Port 3001, REST API |
+| **Database** | Render (hosted Postgres) + SQLx | Transactions + fraud reports |
+| **ML Microservice** | Python FastAPI + scikit-learn | Port 8000, Isolation Forest, Benford's Law, duplicate detection |
+| **LLM** | HuggingFace endpoint (GPT-OSS-120b) | Fraud explanations, geo risk briefings, report summaries |
+| **Vision AI** | Google Gemini API | Document fraud analysis (PDF/images) |
+| **Sanctions Data** | OpenSanctions API (`api.opensanctions.org`) | Live search, no pre-loaded dataset |
+| **Conflict Data** | UCDP API (Uppsala) | Client implemented, not actively used in scoring |
+| **UI Components** | Radix UI + lucide-react | Accessible primitives |
+
+---
+
+## Architecture
+
+```text
 ┌─────────────────────────────────────────────────────────┐
-│                    FRONTEND (Next.js + Tailwind)         │
-│                                                         │
-│  ┌──────────┐  ┌──────────────┐  ┌───────────────────┐ │
-│  │ Sanctions │  │   Anomaly    │  │  Geopolitical     │ │
-│  │ Screener  │  │  Detector    │  │  Monitor (stretch)│ │
-│  └─────┬─────┘  └──────┬───────┘  └────────┬──────────┘ │
-│        │               │                   │            │
-│  ┌─────┴───────────────┴───────────────────┴──────────┐ │
-│  │     Dashboard Shell (upload, summary, PDF export)   │ │
-│  └─────────────────────┬───────────────────────────────┘ │
-└─────────────────────────┼───────────────────────────────┘
-                          │ REST API
-┌─────────────────────────┼───────────────────────────────┐
-│                  RUST BACKEND (Axum)                     │
-│                                                         │
-│  ┌──────────────┐ ┌───────────────┐ ┌────────────────┐ │
-│  │ /api/sanctions│ │ /api/anomalies│ │ /api/georisk   │ │
-│  │  POST upload  │ │  POST upload  │ │ POST analyze   │ │
-│  └──────┬───────┘ └───────┬───────┘ └───────┬────────┘ │
-│         │                 │                  │          │
-│  ┌──────┴─────┐   ┌──────┴───────┐  ┌──────┴───────┐  │
-│  │ strsim     │   │ smartcore OR │  │ UCDP API     │  │
-│  │ fuzzy match│   │ Python sidecar│  │ client       │  │
-│  └────────────┘   └──────────────┘  └──────────────┘  │
-│                                                         │
+│                 FRONTEND (Next.js 19)                    │
+│                                                          │
 │  ┌─────────────────────────────────────────────────────┐ │
-│  │    Gemini API Client (reqwest → ai.google.dev)      │ │
-│  │    Generates plain-English explanations for all flags│ │
+│  │  Single Dashboard Page (app/page.tsx)               │ │
+│  │                                                     │ │
+│  │  ┌──────────────┐ ┌──────────────┐ ┌─────────────┐ │ │
+│  │  │ Fraud Score  │ │   Scanners   │ │   Reports   │ │ │
+│  │  │ ProtScore    │ │ AnomalyUpload│ │ Anomaly Tab │ │ │
+│  │  │ FlaggedTxns  │ │ SanctionsCSV│ │ Sanctions   │ │ │
+│  │  │ RiskOverview │ │ GeoRisk Input│ │ GeoRisk Tab │ │ │
+│  │  └──────────────┘ └──────────────┘ └─────────────┘ │ │
 │  └─────────────────────────────────────────────────────┘ │
+└─────────────────────────┬───────────────────────────────┘
+                          │ REST API (localhost:3001)
+┌─────────────────────────┼───────────────────────────────┐
+│               RUST BACKEND (Axum)                        │
+│                                                          │
+│  /api/fraud/scan        /api/sanctions/scan              │
+│  /api/fraud/georisk     /api/fraud/document              │
+│  /api/fraud/pipeline    /api/fraud/benford               │
+│  /api/fraud/duplicates  /api/fraud/report[/summary]      │
+│  /api/transactions      /api/risk/business               │
+│                                                          │
+│  ┌─────────────┐  ┌──────────────┐  ┌────────────────┐  │
+│  │ fraud_rules │  │anomaly_svc   │  │ llm.rs         │  │
+│  │ (rule-based │  │(calls Python │  │ (HuggingFace   │  │
+│  │  scoring)   │  │  sidecar)    │  │  GPT-OSS)      │  │
+│  └─────────────┘  └──────────────┘  └────────────────┘  │
+│  ┌─────────────┐  ┌──────────────┐  ┌────────────────┐  │
+│  │open_sanction│  │gemini_vision │  │ ucdp.rs        │  │
+│  │(API search) │  │(doc analysis)│  │ (conflict data)│  │
+│  └─────────────┘  └──────────────┘  └────────────────┘  │
 │                          │                               │
 │                    ┌─────┴─────┐                         │
 │                    │  Render   │                         │
 │                    │ Postgres  │                         │
-│                    │           │                         │
 │                    └───────────┘                         │
+└─────────────────────────┬───────────────────────────────┘
+                          │ HTTP (localhost:8000)
+┌─────────────────────────┼───────────────────────────────┐
+│           PYTHON ML SIDECAR (FastAPI)                    │
+│                                                          │
+│  POST /score     → Isolation Forest anomaly scoring      │
+│  POST /benford   → Benford's Law chi-squared analysis    │
+│  POST /duplicates → Duplicate invoice detection          │
 └─────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Data Sources (Updated)
-
-| Source | What | Access | Setup Time |
-|--------|------|--------|-----------|
-| **OpenSanctions** | 300K+ sanctioned entities (OFAC, EU, UN, UK, AU) | Download JSON from opensanctions.org/datasets — use `default` dataset | 2 min download, load into memory or at startup |
-| **UCDP** | Georeferenced conflict events, state-based violence, fatalities | REST API: `https://ucdpapi.pcr.uu.se/api/` — free, no key, returns JSON | Zero setup, query on the fly |
-| **Gemini** | AI-generated risk explanations | API key from ai.google.dev (free tier: 15 RPM) | 1 min to get key |
-| **Render Postgres** | Hosted Postgres DB | Use connection string from Render dashboard | Set DATABASE_URL env var |
-
----
-
-## Team Roles (Updated for Rust + Render Postgres)
-
-### Person 1 — Frontend Lead (You)
-
-Owns the entire Next.js frontend + backend API integration.
-
-| Block | Hours | Deliverable |
-|-------|-------|-------------|
-| Setup | 0–2 | Next.js scaffold + Tailwind + tab layout (3 tabs) |
-| Module 1 UI | 2–5 | Sanctions tab: CSV drag-drop upload → trigger backend scan → results table with risk badges + expandable AI explanation cards |
-| Module 2 UI | 5–8 | Anomaly tab: transaction CSV upload → results table with anomaly scores + bar/heat visualization |
-| Dashboard | 8–10 | Summary card (total scans, flags, risk level), PDF export button, header/branding |
-| Integration | 10–12 | Wire all API calls to Rust backend, loading states, error handling, empty states |
-| Stretch | 12–14 | Module 3 UI: country input, risk score cards, mini risk indicators |
-| Polish | 14–16 | Animations, responsive, dark mode, loading skeletons |
-| Demo | 16–18 | End-to-end demo flow verified, screenshot capture |
-
-### Person 2 — Rust Backend Lead
-
-Owns the Axum server, all API endpoints, Render Postgres integration.
-
-| Block | Hours | Deliverable |
-|-------|-------|-------------|
-| Setup | 0–2 | `cargo init`, Axum scaffold, Render Postgres connection via `sqlx`, CORS middleware, folder structure |
-| Sanctions Engine | 2–6 | OpenSanctions JSON loader → in-memory HashMap, `strsim` Jaro-Winkler fuzzy matching, `/api/sanctions` endpoint (accept CSV, parse with `csv` crate, match, return JSON) |
-| Anomaly Engine | 6–10 | Feature engineering in Rust OR Python sidecar for Isolation Forest, `/api/anomalies` endpoint |
-| DB Models | 10–12 | `sqlx` migrations: scans table, flagged_entities table, flagged_transactions table |
-| API Polish | 12–14 | Input validation, proper error types, rate limiting on Gemini calls |
-| Stretch | 14–16 | `/api/georisk` endpoint: UCDP API client via `reqwest`, risk scoring |
-| Deploy | 16–18 | Deploy to Railway or Shuttle.rs, env vars, final testing |
-
-### Person 3 — ML / AI / Data Engineer
-
-Owns anomaly detection model, ALL Gemini prompt engineering, sample data generation.
-
-| Block | Hours | Deliverable |
-|-------|-------|-------------|
-| Data Prep | 0–2 | Download OpenSanctions `default` dataset, generate sample vendor CSV (200 entities, 5–10 planted sanctioned names) + transaction CSV (1000 rows, planted anomalies) with Python Faker |
-| Anomaly Model | 2–6 | Python script or Rust `smartcore`: Isolation Forest pipeline — feature engineering (amount stats, frequency, vendor patterns) → model → anomaly scores. If Python: wrap in tiny FastAPI sidecar the Rust backend calls |
-| Gemini Prompts | 6–10 | Write + test all 3 prompt templates: sanctions explanation, anomaly explanation, geopolitical briefing. Iterate until outputs are crisp and specific |
-| AI Service | 10–12 | Help P2 build the Gemini API client in Rust (`reqwest` POST to `generativelanguage.googleapis.com`), structured prompt formatting, response parsing |
-| UCDP Integration | 12–14 | UCDP API client: query conflict events by country, parse JSON, compute composite risk score (event count + fatalities + intensity weighted) |
-| Demo Data | 14–16 | Craft the perfect demo CSVs that produce impressive, realistic results. Test full pipeline |
-| Polish | 16–18 | Final prompt tuning, help with demo prep |
-
-### Person 4 — DevOps / Integration / Pitch
-
-Owns deployment, PDF export, Devpost, demo video, pitch.
-
-| Block | Hours | Deliverable |
-|-------|-------|-------------|
-| Setup | 0–3 | GitHub repo + branch strategy, Render Postgres setup, `.env.example`, README |
-| Infra | 3–6 | Get Gemini API key, help P2 with Render Postgres connection, test OpenSanctions data loading |
-| Deploy v1 | 6–9 | Vercel deploy for frontend, Railway/Shuttle for Rust backend, DATABASE_URL in env vars |
-| PDF Export | 9–12 | Build PDF compliance report generator (frontend-side with `jsPDF` or `@react-pdf/renderer`) |
-| Integration Test | 12–14 | Full end-to-end flow on deployed URLs, fix any issues |
-| Devpost | 14–16 | Write Devpost page, take screenshots, record 2-min demo video |
-| Pitch | 16–18 | 5-slide pitch deck, rehearse 3-min demo, backup plans ready |
-
----
-
-## 36-Hour Timeline
-
-### Phase 1: Foundation (Hours 0–6) — TONIGHT
-
-```
-HOUR 0-1  ★ EVERYONE DOES THIS SIMULTANEOUSLY ★
-├── P1:  npx create-next-app + Tailwind
-├── P2:  cargo init + axum + sqlx + strsim + reqwest in Cargo.toml
-├── P3:  Download OpenSanctions default.json + start Faker script
-├── P4:  GitHub repo + Render Postgres + .env files
-└── ALL:  Get Gemini API key (one person, share with team)
-
-HOUR 1-3
-├── P1:  Tab layout + FileUpload component + ResultsTable (dummy data)
-├── P2:  Axum server running + /health endpoint + Render Postgres connected
-├── P3:  Sample CSVs generated (vendors + transactions with planted flags)
-├── P4:  Docker/local dev working for everyone, help P2 with setup
-└── ★ SYNC @ Hour 3: Everyone can run frontend + backend locally ★
-
-HOUR 3-6
-├── P1:  Sanctions tab UI complete (upload → loading → results table → AI cards)
-├── P2:  OpenSanctions loaded into memory + /api/sanctions endpoint returning matches
-├── P3:  Isolation Forest pipeline v1 working on sample data
-├── P4:  First Vercel + Railway deploy attempt
-└── ★ MILESTONE: Upload a CSV → get fuzzy match results back ★
-```
-
-### Phase 2: Core Features (Hours 6–12) — OVERNIGHT
-
-```
-HOUR 6-9
-├── P1:  Anomaly tab UI + risk visualization (score bars/indicators)
-├── P2:  /api/anomalies endpoint integrated with P3's model
-├── P3:  Gemini prompt templates written + tested for sanctions + anomalies
-├── P4:  Deployment live on public URLs
-└── ★ SYNC @ Hour 9: Both modules returning real data + AI explanations ★
-
-HOUR 9-12
-├── P1:  Dashboard summary card + wire all real API calls (replace dummy data)
-├── P2:  DB persistence (save scan results to Render Postgres) + error handling
-├── P3:  Gemini client in Rust working + prompt quality iteration
-├── P4:  PDF export working + integration testing on deployed version
-└── ★ MILESTONE: Both core modules fully working end-to-end ★
-```
-
-### 😴 SLEEP BREAK — Hours 12–15 (3 hours)
-
-Seriously. Sleep. You will write buggy code and make bad decisions without it. Set alarms.
-
-### Phase 3: Stretch + Polish (Hours 15–21) — SATURDAY
-
-```
-HOUR 15-18
-├── P1:  Module 3 UI (stretch) OR polish animations/responsive/dark mode
-├── P2:  /api/georisk endpoint (stretch) OR harden existing endpoints
-├── P3:  UCDP API client + risk scorer (stretch) OR perfect demo data
-├── P4:  Devpost draft + screenshots started
-└── DECISION @ Hour 15: "Are both core modules solid?" → Yes = build M3, No = polish
-
-HOUR 18-21
-├── P1:  Final UI polish, every edge case handled (empty state, error, loading)
-├── P2:  Final deploy, all endpoints tested on production URLs
-├── P3:  Demo data finalized — produces impressive output every time
-├── P4:  Demo video recorded, Devpost complete, pitch rehearsed
-└── ★ MILESTONE: SUBMISSION READY ★
-```
-
-### Phase 4: Buffer (Hours 21–24+)
-
-```
-├── Fix any last-minute bugs
-├── Re-record demo video if needed
-├── Submit to Devpost
-├── Rehearse pitch one more time
-└── ★ DONE ★
-```
-
----
-
-## API Contract (Lock this in at Hour 0)
-
-```rust
-// POST /api/sanctions
-// Content-Type: multipart/form-data (CSV file)
-// Response 200:
-{
-  "scan_id": "uuid",
-  "total_entities": 150,
-  "flagged": 7,
-  "results": [
-    {
-      "uploaded_name": "Acme Trading Ltd",
-      "matched_name": "ACME Trading Limited",
-      "confidence": 92,
-      "risk_level": "HIGH",
-      "sanctions_list": "OFAC SDN",
-      "reason": "Narcotics trafficking",
-      "ai_explanation": "This entity closely matches...",
-      "action": "Do not transact — verify identity immediately"
-    }
-  ]
-}
-
-// POST /api/anomalies
-// Content-Type: multipart/form-data (CSV file)
-// Response 200:
-{
-  "scan_id": "uuid",
-  "total_transactions": 1200,
-  "flagged": 23,
-  "results": [
-    {
-      "row_index": 847,
-      "date": "2024-03-15",
-      "vendor": "Unknown Supplier Co",
-      "amount": 47500.00,
-      "anomaly_score": 0.92,
-      "risk_level": "HIGH",
-      "reasons": ["4.7x above vendor avg", "first transaction with vendor"],
-      "ai_explanation": "This transaction stands out because..."
-    }
-  ]
-}
-
-// POST /api/georisk  (STRETCH)
-// Body: { "countries": ["Myanmar", "Nigeria", "Turkey"] }
-// Response 200:
-{
-  "results": [
-    {
-      "country": "Myanmar",
-      "risk_score": 87,
-      "risk_level": "CRITICAL",
-      "conflict_events_90d": 342,
-      "fatalities_90d": 891,
-      "ai_briefing": "Myanmar continues to experience..."
-    }
-  ]
-}
-```
-
-**Frontend calls these endpoints. Backend returns these shapes. No deviation. Lock it in.**
-
----
-
-## Database Setup — Render Postgres (Person 4 does this at Hour 0)
-
-1. Create a Postgres database on render.com
-2. Copy the external connection string from the Render dashboard
-3. Set `DATABASE_URL` in `backend/arrt/.env`
-4. Run these SQL migrations:
-
-```sql
--- Scan history
-CREATE TABLE scans (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  scan_type TEXT NOT NULL CHECK (scan_type IN ('sanctions', 'anomalies', 'georisk')),
-  file_name TEXT,
-  total_records INT,
-  flagged_count INT,
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Flagged entities (sanctions)
-CREATE TABLE flagged_entities (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  scan_id UUID REFERENCES scans(id),
-  uploaded_name TEXT NOT NULL,
-  matched_name TEXT,
-  confidence INT,
-  risk_level TEXT CHECK (risk_level IN ('HIGH', 'MEDIUM', 'LOW')),
-  sanctions_list TEXT,
-  reason TEXT,
-  ai_explanation TEXT,
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Flagged transactions (anomalies)
-CREATE TABLE flagged_transactions (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  scan_id UUID REFERENCES scans(id),
-  row_index INT,
-  transaction_date DATE,
-  vendor TEXT,
-  amount NUMERIC(12,2),
-  anomaly_score NUMERIC(5,4),
-  risk_level TEXT CHECK (risk_level IN ('HIGH', 'MEDIUM', 'LOW')),
-  reasons TEXT[],
-  ai_explanation TEXT,
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-```
-
----
-
-## Gemini API Call Pattern (Rust)
-
-```rust
-use reqwest::Client;
-use serde_json::json;
-
-async fn call_gemini(prompt: &str, api_key: &str) -> Result<String, Box<dyn std::error::Error>> {
-    let client = Client::new();
-    let url = format!(
-        "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={}",
-        api_key
-    );
-    
-    let body = json!({
-        "contents": [{
-            "parts": [{"text": prompt}]
-        }]
-    });
-    
-    let resp = client.post(&url)
-        .json(&body)
-        .send()
-        .await?
-        .json::<serde_json::Value>()
-        .await?;
-    
-    let text = resp["candidates"][0]["content"]["parts"][0]["text"]
-        .as_str()
-        .unwrap_or("No explanation available")
-        .to_string();
-    
-    Ok(text)
-}
-```
-
----
-
-## UCDP API Query Pattern
-
-```
-GET https://ucdpapi.pcr.uu.se/api/gedevents/24.1?pagesize=100&Country=Myanmar
-```
-
-Returns JSON with `Result` array containing:
-- `date_start`, `date_end`
-- `country`, `region`
-- `type_of_violence` (1=state-based, 2=non-state, 3=one-sided)
-- `deaths_a`, `deaths_b`, `deaths_civilians`, `best` (best estimate total deaths)
-- `latitude`, `longitude`
-
-Composite risk score formula:
-```
-risk = 0.4 * normalize(event_count) + 0.4 * normalize(fatalities) + 0.2 * normalize(violence_type_diversity)
-```
-
----
-
-## Risk Mitigation (Updated)
-
-| Risk | Mitigation |
-|------|-----------|
-| Rust compilation too slow during iteration | Use `cargo watch -x run` for hot reload. Pre-write struct definitions at Hour 0 so the type system helps instead of fights |
-| `smartcore` Isolation Forest too painful in Rust | Fallback: tiny Python FastAPI sidecar (~30 lines) that wraps scikit-learn. Rust backend calls it via HTTP. Polyglot architecture is fine |
-| Render Postgres connection issues | Fallback: SQLite file locally, deploy with the file. `sqlx` works identically with either |
-| Gemini rate limit hit during demo | Pre-cache explanations for demo data in DB. Serve cached responses during live demo |
-| OpenSanctions dataset too large for memory | Filter to top-5 lists (OFAC, EU, UN, UK, AU) — reduces to ~50K entities |
-| UCDP API slow or down | Pre-fetch data for demo countries at build time, cache in DB |
-| Team member burns out | 3-hour sleep break is mandatory between Phase 2 and 3 |
-
----
-
 ## File Structure
 
-```
-shieldai/
-├── README.md
-├── .env.example
+```text
+arrt/
+├── arrt.md                          # This document
+├── .gitignore
+├── RENDER_DEPLOY.md
+├── AXUM_SETUP.md
+│
 ├── frontend/
 │   ├── app/
 │   │   ├── layout.tsx
-│   │   ├── page.tsx
+│   │   ├── page.tsx                 # Main dashboard (~800+ lines)
 │   │   └── globals.css
 │   ├── components/
-│   │   ├── Layout.tsx
-│   │   ├── FileUpload.tsx
-│   │   ├── ResultsTable.tsx
-│   │   ├── RiskBadge.tsx
-│   │   ├── AIExplanationCard.tsx
-│   │   ├── RiskSummary.tsx
-│   │   └── PDFExport.tsx
+│   │   ├── ProtectionScore.tsx      # SVG circular gauge (0–100)
+│   │   ├── FlaggedTransactions.tsx  # Top 5 flagged txns
+│   │   ├── RiskOverview.tsx         # Summary stats card
+│   │   ├── ResultsTable.tsx         # Unified results table (anomaly/sanctions/geo)
+│   │   ├── CSVDataTable.tsx         # Inline editable transaction table
+│   │   ├── AIExplanationCard.tsx    # Expandable AI explanation
+│   │   ├── RiskBadge.tsx            # HIGH/MEDIUM/LOW badge
+│   │   ├── PDFExport.tsx            # Export button (skeleton only)
+│   │   └── ui/                      # Radix UI primitives
 │   ├── lib/
-│   │   └── api.ts
+│   │   └── api.ts                   # API client + TypeScript types
+│   ├── public/
+│   │   └── yosemite_logo.png
 │   ├── package.json
-│   └── tailwind.config.ts
-├── backend/
-│   ├── arrt/
-│   │   ├── Cargo.toml
-│   │   ├── Cargo.lock
-│   │   └── src/
-│   │       ├── main.rs
-│   │       ├── routes/
-│   │       │   ├── mod.rs
-│   │       │   ├── sanctions.rs
-│   │       │   ├── anomalies.rs
-│   │       │   └── georisk.rs
-│   │       ├── services/
-│   │       │   ├── mod.rs
-│   │       │   ├── sanctions_matcher.rs
-│   │       │   ├── anomaly_detector.rs
-│   │       │   ├── gemini_client.rs
-│   │       │   ├── ucdp_client.rs
-│   │       │   └── risk_scorer.rs
-│   │       ├── models/
-│   │       │   ├── mod.rs
-│   │       │   └── schemas.rs
-│   │       └── data/
-│   │           └── (OpenSanctions JSON goes here)
-│   └── .env
-├── ml-sidecar/               # ONLY if Rust ML is too painful
-│   ├── main.py               # FastAPI, ~50 lines
-│   ├── requirements.txt
-│   └── model.py              # Isolation Forest
+│   ├── tailwind.config.ts
+│   ├── next.config.ts
+│   └── .env                         # NEXT_PUBLIC_BACKEND_URL=http://localhost:3001
+│
+├── backend/arrt/
+│   ├── Cargo.toml
+│   ├── .env                         # DB, API keys, service URLs
+│   ├── migrations/
+│   │   ├── 0001_create_transactions.sql  # Schema + 8 seed transactions
+│   │   ├── 0002_add_missing_columns.sql
+│   │   ├── 0003_create_fraud_reports.sql
+│   │   └── 0004_add_ai_review_to_fraud_reports.sql
+│   └── src/
+│       ├── main.rs                  # Router setup, CORS, port 3001
+│       ├── lib.rs
+│       ├── state.rs                 # AppState (db pool + HTTP client)
+│       ├── models/
+│       │   ├── fraud.rs             # ScoringTx, FraudResult, ScanResponse, etc.
+│       │   ├── sanctions.rs         # SanctionsScanResult, SanctionsScanResponse
+│       │   ├── transaction.rs       # Transaction (full DB record)
+│       │   ├── risk.rs              # SanctionsHit, ConflictEvent, BusinessRiskReport
+│       │   └── mod.rs
+│       ├── routes/
+│       │   ├── mod.rs
+│       │   ├── fraud.rs             # POST /api/fraud/scan
+│       │   ├── fraud_report.rs      # POST/GET /api/fraud/report*
+│       │   ├── sanctions.rs         # POST /api/sanctions/scan
+│       │   ├── georisk.rs           # POST /api/fraud/georisk
+│       │   ├── advanced.rs          # GET /api/fraud/{benford,duplicates}
+│       │   ├── document.rs          # POST /api/fraud/document
+│       │   ├── pipeline.rs          # POST /api/fraud/pipeline
+│       │   ├── risk.rs              # POST /api/risk/business
+│       │   └── transactions.rs      # GET /api/transactions
+│       └── services/
+│           ├── mod.rs
+│           ├── fraud_rules.rs       # Rule-based scoring engine
+│           ├── anomaly_service.rs   # Python sidecar client
+│           ├── llm.rs               # HuggingFace GPT-OSS calls
+│           ├── gemini_vision.rs     # Gemini Vision API (document analysis)
+│           ├── ai_parser.rs         # Document → structured transaction CSV
+│           ├── open_sanctions.rs    # OpenSanctions API client
+│           └── ucdp.rs              # UCDP conflict data client
+│
+├── ai/                              # Python ML microservice
+│   ├── main.py                      # FastAPI app (3 endpoints)
+│   ├── model.py                     # Isolation Forest, Benford's Law, duplicates
+│   ├── requirements.txt             # fastapi, uvicorn, scikit-learn, pandas, gunicorn
+│   ├── run.sh                       # Production startup (port 8000)
+│   └── run_local.sh                 # Local dev startup
+│
 ├── scripts/
 │   └── generate_demo_data.py
-└── docs/
-    └── PROJECT_PLAN.md
+│
+└── tasks/                           # Task tracking & design notes
+    ├── ai-1.md / ai-2.md
+    ├── backend-1.md / backend-2.md
+    ├── fraudFeatures.md
+    └── tasks2/
 ```
+
+---
+
+## API Endpoints
+
+```text
+GET  /health                          → "ok"
+
+# Fraud Detection
+POST /api/fraud/scan                  → ScanResponse
+GET  /api/fraud/report/summary        → FraudReportSummaryResponse
+POST /api/fraud/report                → FraudReportResponse
+GET  /api/fraud/benford               → BenfordResponse
+GET  /api/fraud/duplicates            → DuplicatesResponse
+POST /api/fraud/document              → DocumentFraudResponse
+POST /api/fraud/pipeline              → PipelineResponse
+POST /api/fraud/georisk               → GeoRiskResponse
+
+# Sanctions
+POST /api/sanctions/scan              → SanctionsScanResponse
+
+# Transactions
+GET  /api/transactions                → Transaction[]
+
+# Risk (partial)
+POST /api/risk/business               → BusinessRiskReport
+```
+
+### Key Request/Response Shapes
+
+```typescript
+// POST /api/fraud/scan
+// Body: { transaction_ids?: string[] }  (empty = scan all in DB)
+{
+  scan_id: string,
+  total_transactions: number,
+  flagged: number,
+  results: [{
+    transaction_id: string,
+    customer_name: string,
+    amount: number,
+    risk_score: number,          // 0–255
+    risk_level: "HIGH" | "MEDIUM" | "LOW",
+    triggered_rules: string[],
+    anomaly_score: number,       // 0.0–1.0 from Isolation Forest
+    ai_explanation: string
+  }]
+}
+
+// POST /api/sanctions/scan
+// Content-Type: multipart/form-data (CSV file)
+// CSV must have column: description | name | entity_name | company | vendor
+{
+  scan_id: string,
+  total_entities: number,
+  flagged: number,
+  results: [{
+    uploaded_name: string,
+    matched_name: string,
+    confidence: number,          // 0–100
+    risk_level: "HIGH" | "MEDIUM" | "LOW",
+    sanctions_list: string,
+    reason: string,
+    ai_explanation: string,
+    action: string
+  }]
+}
+
+// POST /api/fraud/georisk
+// Body: { countries: string[] }
+{
+  results: [{
+    country: string,
+    risk_score: number,          // 0–100
+    risk_level: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW",
+    conflict_events_90d: number,
+    fatalities_90d: number,
+    ai_briefing: string
+  }]
+}
+
+// POST /api/fraud/document
+// Content-Type: multipart/form-data (PDF or image)
+{
+  risk_level: "HIGH" | "MEDIUM" | "LOW",
+  risk_score: number,
+  fraud_signals: string[],
+  legitimate_indicators: string[],
+  summary: string,
+  recommended_action: string
+}
+
+// POST /api/fraud/pipeline
+// Content-Type: multipart/form-data (any document)
+// Outcomes: "Clean" | "FraudReportSaved" | "AmbiguousReview"
+// Auto-routes based on risk score: Clean < 20, Fraud > 70, Ambiguous 20–70
+```
+
+---
+
+## Fraud Scoring Rules (`fraud_rules.rs`)
+
+| Rule | Points |
+| ---- | ------ |
+| CVV mismatch | +35 |
+| VPN/proxy detected | +30 |
+| AVS address verification failed | +25 |
+| Address mismatch | +20 |
+| High-risk country (NG, RU, CN, KP, IR, VE) | +20 |
+| Card not present + manually keyed | +20 |
+| Round amount (structuring signal) | +15 |
+| High amount (> $5,000) | +15 |
+| Refund requested or completed | +15 |
+| Mobile device + VPN | +15 |
+
+**Risk Levels:** HIGH ≥ 60 · MEDIUM ≥ 30 · LOW < 30
+
+Anomaly scores from the Python Isolation Forest are blended in separately and displayed alongside the rule-based score.
+
+---
+
+## Database Schema
+
+```sql
+-- Seed data: 8 sample transactions (TXN-001 to TXN-008)
+CREATE TABLE transactions (
+  transaction_id  TEXT PRIMARY KEY,
+  customer_name   TEXT,
+  amount          NUMERIC(12,2),
+  cvv_match       BOOLEAN,
+  avs_result      TEXT,
+  address_match   BOOLEAN,
+  ip_is_vpn       BOOLEAN,
+  ip_country      TEXT,
+  device_type     TEXT,
+  card_present    BOOLEAN,
+  entry_mode      TEXT,
+  refund_status   TEXT,
+  created_at      TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE fraud_reports (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  transaction_id   TEXT,
+  confirmed_fraud  BOOLEAN,
+  reported_by      TEXT,
+  notes            TEXT,
+  ai_reviewed      BOOLEAN,
+  ai_review_notes  TEXT,
+  created_at       TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
+---
+
+## Python ML Sidecar (`ai/`)
+
+**Endpoints:**
+
+- `POST /score` — Isolation Forest (5% contamination), returns `{transaction_id, anomaly_score}[]` (scores 0.0–1.0)
+- `POST /benford` — Chi-squared test against Benford's Law (critical value 15.507 at df=8, p=0.05)
+- `POST /duplicates` — Groups by `(customer_id, amount, date)` or `order_id`
+
+**Stack:** FastAPI · Gunicorn + Uvicorn · scikit-learn · pandas
+
+---
+
+## External Services
+
+| Service | Used For | Key |
+| ------- | -------- | --- |
+| Render Postgres | Data persistence | `DATABASE_URL` env var |
+| HuggingFace endpoint | LLM (GPT-OSS-120b) fraud explanations + geo briefings | `HF_BASE_URL` + `HF_API_KEY` |
+| Google Gemini API | Document fraud vision analysis + AI CSV parsing | `GEMINI_API_KEY` |
+| OpenSanctions API | Live entity sanctions search | No key required |
+| UCDP API | Conflict event data | No key required |
+
+---
+
+## Environment Variables
+
+```bash
+# backend/arrt/.env
+DATABASE_URL=postgresql://...@render.com/...
+GEMINI_API_KEY=...
+HF_BASE_URL=https://...aws.endpoints.huggingface.cloud/v1
+HF_API_KEY=...
+RUST_LOG=info
+PORT=3001                          # default
+AI_SERVICE_URL=http://localhost:8000   # Python sidecar
+
+# frontend/.env
+NEXT_PUBLIC_BACKEND_URL=http://localhost:3001
+```
+
+---
+
+## Feature Status
+
+| Feature | Status | Notes |
+| ------- | ------ | ----- |
+| Rule-based fraud scoring | ✓ Done | 10 rules, weighted points |
+| Isolation Forest anomaly detection | ✓ Done | Python sidecar |
+| Benford's Law analysis | ✓ Done | Chi-squared, chi-sq test |
+| Duplicate invoice detection | ✓ Done | Composite key grouping |
+| Sanctions screening | ✓ Done | OpenSanctions live API search |
+| Document fraud analysis | ✓ Done | Gemini Vision (PDF/image) |
+| AI document → transaction parsing | ✓ Done | Gemini Vision extracts CSV |
+| Universal pipeline endpoint | ✓ Done | Auto-routes by risk score |
+| LLM explanations | ✓ Done | HuggingFace GPT-OSS |
+| Fraud report persistence | ✓ Done | Postgres with AI review flag |
+| Dashboard UI | ✓ Done | Protection score, flagged txns, risk overview |
+| CSV upload + manual entry | ✓ Done | Drag-drop + inline table editor |
+| Report tabs (Anomaly/Sanctions/Geo) | ✓ Done | Bottom tab panels |
+| Geopolitical risk (LLM-based) | ✓ Done | Per-country risk briefing |
+| Geopolitical risk (UCDP-based) | ✗ Incomplete | Client exists, not wired into scoring |
+| PDF export | ✗ Skeleton | `PDFExport.tsx` exists, no library integrated |
+| Business risk assessment | ✗ Skeleton | Endpoint exists, not fully featured |
+| Authentication | ✗ None | Open access |
+| Rate limiting | ✗ None | Relevant for Gemini/HF calls |

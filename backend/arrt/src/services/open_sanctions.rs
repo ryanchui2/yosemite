@@ -3,17 +3,21 @@ use serde_json::Value;
 
 use crate::models::risk::SanctionsHit;
 
-pub async fn search(client: &Client, query: &str) -> Vec<SanctionsHit> {
+pub async fn search(client: &Client, query: &str, api_key: &str) -> Vec<SanctionsHit> {
     let url = format!(
         "https://api.opensanctions.org/search/default?q={}&limit=10",
         urlencoding::encode(query)
     );
 
-    let resp = client
+    let mut req = client
         .get(&url)
-        .header("Accept", "application/json")
-        .send()
-        .await;
+        .header("Accept", "application/json");
+
+    if !api_key.is_empty() {
+        req = req.header("Authorization", format!("ApiKey {}", api_key));
+    }
+
+    let resp = req.send().await;
 
     match resp {
         Ok(r) => match r.json::<Value>().await {

@@ -41,10 +41,14 @@ async fn main() {
 
     tracing::info!("Migrations applied");
 
-    let state = AppState { 
+    let opensanctions_api_key = std::env::var("OPENSANCTIONS_API_KEY")
+        .unwrap_or_default();
+
+    let state = AppState {
         db: pool,
         http: reqwest::Client::new(),
-     };
+        opensanctions_api_key,
+    };
     let cors = CorsLayer::new()
         .allow_origin(Any)
         .allow_methods(Any)
@@ -63,6 +67,8 @@ async fn main() {
         .route("/api/fraud/georisk", post(routes::georisk::analyze))
         .route("/api/fraud/pipeline", post(routes::pipeline::ingest))
         .route("/api/risk/business", post(routes::risk::business_risk))
+        .route("/api/chat", post(routes::chat::respond))
+        .route("/api/entity/investigate", post(routes::entity::investigate))
         .route("/api/sanctions/scan", post(routes::sanctions::scan))
         .with_state(state)
         .layer(cors);

@@ -1,0 +1,7 @@
+transaction_id,customer_name,timestamp,amount,currency,payment_method,card_brand,card_last4,ip_country,ip_is_vpn,device_type,cvv_match,address_match
+TXN-D001,GlobalTex Imports Ltd,2026-03-01T10:23:00Z,12500.00,USD,card,Visa,4821,IR,true,desktop,false,false
+TXN-D002,GlobalTex Imports Ltd,2026-03-05T14:11:00Z,9800.00,USD,card,Mastercard,9134,IR,true,mobile,false,true
+TXN-D003,GlobalTex Imports Ltd,2026-03-08T09:45:00Z,15000.00,USD,card,Visa,4821,IR,false,desktop,false,false
+TXN-D004,GlobalTex Imports Ltd,2026-03-12T16:30:00Z,11200.00,USD,card,Visa,4821,IR,true,desktop,true,true
+TXN-D005,Acme Office Supplies,2026-03-02T11:00:00Z,320.00,USD,card,Visa,1122,US,false,desktop,true,true
+TXN-D006,Nordic Consulting Group,2026-03-07T13:00:00Z,1800.00,USD,bank_transfer,,,DE,false,desktop,true,true

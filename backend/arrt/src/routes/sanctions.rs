@@ -124,8 +124,8 @@ pub async fn scan(
             None => name.clone(),
         };
         total_entities += 1;
-
-        let hits: Vec<SanctionsHit> = open_sanctions::search(&state.http, &query).await;
+        let hits: Vec<SanctionsHit> =
+            open_sanctions::search(&state.http, &query, &state.opensanctions_api_key).await;
 
         let (llm_risk, ai_explanation) = llm::explain_sanctions_entity(&state.http, name, &hits)
             .await

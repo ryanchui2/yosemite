@@ -1,5 +1,7 @@
 pub mod advanced;
+pub mod chat;
 pub mod document;
+pub mod entity;
 pub mod fraud;
 pub mod fraud_report;
 pub mod georisk;
