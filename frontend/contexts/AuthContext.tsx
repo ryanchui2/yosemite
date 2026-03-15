@@ -26,6 +26,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     refreshAccessToken().then((token) => {
       if (token) {
+        setAccessToken(token);
         const payload = parseJwtPayload(token);
         if (payload) {
           setUser({ id: payload.sub, email: payload.email, role: payload.role });

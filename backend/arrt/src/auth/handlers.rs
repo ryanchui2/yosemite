@@ -270,14 +270,22 @@ pub async fn refresh(
         .unwrap_or(30);
     let expires_at = Utc::now() + chrono::Duration::days(expiry_days);
 
-    let _ = sqlx::query(
+    if sqlx::query(
         "INSERT INTO refresh_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, $3)",
     )
     .bind(user.id)
     .bind(&new_hash)
     .bind(expires_at)
     .execute(&state.db)
-    .await;
+    .await
+    .is_err()
+    {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": "Failed to rotate session"})),
+        )
+            .into_response();
+    }
 
     let access_token = match create_access_token(&user) {
         Ok(t) => t,

@@ -50,9 +50,12 @@ pub async fn scan(
         ai_base_url().trim_end_matches('/')
     );
 
+    tracing::debug!(transaction_count = payload.transactions.len(), "agent_scan: request received");
+
     match state.http.post(&url).json(&payload).send().await {
         Ok(resp) => {
             let status = resp.status();
+            tracing::debug!(status = status.as_u16(), "agent_scan: sidecar response");
             if !status.is_success() {
                 let body = resp.text().await.unwrap_or_else(|_| status.to_string());
                 return (
@@ -76,13 +79,16 @@ pub async fn scan(
                     .into_response(),
             }
         }
-        Err(e) => (
-            StatusCode::SERVICE_UNAVAILABLE,
-            Json(serde_json::json!({
-                "error": "AI service unavailable",
-                "detail": e.to_string()
-            })),
-        )
-            .into_response(),
+        Err(e) => {
+            tracing::error!(error = %e, "agent_scan: sidecar HTTP error");
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(serde_json::json!({
+                    "error": "AI service unavailable",
+                    "detail": e.to_string()
+                })),
+            )
+                .into_response()
+        }
     }
 }

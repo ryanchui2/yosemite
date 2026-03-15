@@ -18,9 +18,9 @@ async function apiFetch(input: string, init: RequestInit = {}): Promise<Response
       headers.set("Authorization", `Bearer ${newToken}`);
       return fetch(input, { ...init, headers, credentials: "include" });
     }
-    // Refresh failed — redirect to login
+    // Refresh failed — redirect to landing page
     if (typeof window !== "undefined") {
-      window.location.href = "/login";
+      window.location.href = "/";
     }
   }
 

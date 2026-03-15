@@ -45,6 +45,9 @@ async fn main() {
 
     tracing::info!("Migrations applied");
 
+    // Validate required secrets at startup so the server refuses to boot if they're missing
+    std::env::var("JWT_SECRET").expect("JWT_SECRET must be set");
+
     let opensanctions_api_key = std::env::var("OPENSANCTIONS_API_KEY")
         .unwrap_or_default();
 

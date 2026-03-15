@@ -1,7 +1,10 @@
 import json
+import logging
 import os
 import traceback
 from typing import List, Optional
+
+logger = logging.getLogger(__name__)
 
 import railtracks as rt
 from dotenv import load_dotenv
@@ -465,7 +468,10 @@ async def agent_scan(req: AgentScanRequest):
         report.sequence_summary = sequence_summary
 
         # Optional second-pass reviewer agent (only when USE_LLM_FOR_FRAUD is set).
-        if _use_llm_for_fraud() and os.environ.get("FRAUD_REVIEWER_ENABLED", "").lower() in ("true", "1", "yes"):
+        _rev_raw = os.environ.get("FRAUD_REVIEWER_ENABLED", "<unset>")
+        _rev_condition = _use_llm_for_fraud() and str(_rev_raw).lower() in ("true", "1", "yes")
+        logger.debug("FRAUD_REVIEWER_ENABLED raw=%r condition=%s", _rev_raw, _rev_condition)
+        if _rev_condition:
             try:
                 from invoice_fraud.multi_agent import fraud_reviewer
                 review_prompt = (
@@ -475,10 +481,15 @@ async def agent_scan(req: AgentScanRequest):
                     f"Recommendations: {report.recommendations}"
                 )
                 review_result = await rt.call(fraud_reviewer, review_prompt)
+                logger.debug(
+                    "reviewer result: has_structured=%s has_notes=%s",
+                    review_result.structured is not None,
+                    bool(review_result.structured and getattr(review_result.structured, "review_notes", None)),
+                )
                 if review_result.structured and review_result.structured.review_notes:
                     report.review_notes = review_result.structured.review_notes
-            except Exception:
-                pass  # Don't fail the request if reviewer fails
+            except Exception as e:
+                logger.warning("reviewer failed: %s: %s", type(e).__name__, e)
 
         duration_ms = round((time.perf_counter() * 1000) - start_ms)
         out = report.model_dump()

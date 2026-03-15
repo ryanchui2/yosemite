@@ -1,6 +1,5 @@
 "use client";
 
-<<<<<<< HEAD
 import { useRef, useState, useEffect, useCallback } from "react";
 import { ResultsTable } from "@/components/ResultsTable";
 import { PDFExport } from "@/components/PDFExport";
@@ -18,7 +17,6 @@ import {
   fetchFraudReportSummary,
   fetchTransactions,
   agentScan,
-  seedDemoTransactions,
   saveCsvData,
   fetchSavedCsvList,
   saveEntityList,
@@ -46,240 +44,145 @@ import {
   LogOut,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
-=======
-import { useState } from "react";
-import { useRouter } from "next/navigation";
->>>>>>> 700ec0b0eac4c397ecbff43c6b5f15cc2b78be2c
 import Image from "next/image";
-import { Github } from "lucide-react";
-import { useAuth } from "@/contexts/AuthContext";
-import { registerRequest } from "@/lib/auth";
 
-export default function LandingPage() {
-  const { login } = useAuth();
-  const router = useRouter();
-  const [modalOpen, setModalOpen] = useState(false);
-  const [mode, setMode] = useState<"login" | "register">("login");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+type SidebarTab = "overview" | "anomaly" | "geosanctions" | "aifraud";
 
-  function openModal(initialMode: "login" | "register") {
-    setMode(initialMode);
-    setError(null);
-    setEmail("");
-    setPassword("");
-    setModalOpen(true);
-  }
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-    setLoading(true);
-    try {
-      if (mode === "register") {
-        await registerRequest(email, password);
+/** RFC 4180-compliant CSV line parser — handles quoted fields with embedded commas. */
+function parseCSVLine(line: string): string[] {
+  const values: string[] = [];
+  let current = "";
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQuotes) {
+      if (ch === '"' && line[i + 1] === '"') {
+        current += '"';
+        i++;
+      } else if (ch === '"') {
+        inQuotes = false;
+      } else {
+        current += ch;
       }
-      await login(email, password);
-      router.replace("/dashboard");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong");
-    } finally {
-      setLoading(false);
+    } else {
+      if (ch === '"') {
+        inQuotes = true;
+      } else if (ch === ",") {
+        values.push(current.trim());
+        current = "";
+      } else {
+        current += ch;
+      }
     }
   }
+  values.push(current.trim());
+  return values;
+}
+
+function parseCSV(text: string): {
+  headers: string[];
+  rows: Record<string, string>[];
+} {
+  const lines = text.trim().split(/\r?\n/);
+  const headers = parseCSVLine(lines[0]);
+  const rows = lines
+    .slice(1)
+    .filter(Boolean)
+    .map((line) => {
+      const values = parseCSVLine(line);
+      return Object.fromEntries(headers.map((h, i) => [h, values[i] ?? ""]));
+    });
+  return { headers, rows };
+}
+
+function rowsToCSVFile(
+  headers: string[],
+  rows: Record<string, string>[],
+): File {
+  const quote = (v: string) => `"${v.replace(/"/g, '""')}"`;
+  const lines = [
+    headers.map(quote).join(","),
+    ...rows.map((r) => headers.map((h) => quote(r[h] ?? "")).join(",")),
+  ];
+  return new File([lines.join("\n")], "data.csv", { type: "text/csv" });
+}
+
+/** Compact drag-and-drop upload zone */
+function DropZone({
+  hint,
+  onFile,
+  onRemove,
+  fileName,
+}: {
+  hint: string;
+  onFile: (f: File) => void;
+  onRemove?: () => void;
+  fileName?: string;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [dragging, setDragging] = useState(false);
 
   return (
-    <div
-      className="h-screen overflow-hidden flex flex-col bg-white text-black"
-      style={{ fontFamily: "var(--font-space-grotesk)" }}
-    >
-      {/* Header */}
-      <header className="flex items-center justify-between px-6 py-5 shrink-0">
-        <Image
-          src="/yosemite_logo.png"
-          alt="Yosemite"
-          width={36}
-          height={36}
-          className="object-contain"
+    <div className="relative">
+      <div
+        onDragOver={(e) => {
+          e.preventDefault();
+          setDragging(true);
+        }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragging(false);
+          const f = e.dataTransfer.files[0];
+          if (f) onFile(f);
+        }}
+        onClick={() => inputRef.current?.click()}
+        className={`border border-border px-4 py-5 text-center cursor-pointer transition-all ${dragging ? "border-foreground bg-accent" : "hover:border-foreground/40"}`}
+      >
+        <input
+          ref={inputRef}
+          type="file"
+          accept=".csv,.pdf"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) onFile(f);
+          }}
         />
-
-        {/* Right nav: Log In + Sign Up | GitHub */}
-        <div className="flex items-center gap-4">
-          <div className="flex items-center">
-            <button
-              onClick={() => openModal("login")}
-              className="border border-black w-24 py-2 text-xs font-medium tracking-widest lowercase hover:bg-black hover:text-white transition-colors"
-            >
-              Log In
-            </button>
-            <button
-              onClick={() => openModal("register")}
-              className="border border-black border-l-0 w-24 py-2 text-xs font-medium tracking-widest lowercase hover:bg-black hover:text-white transition-colors"
-            >
-              Sign Up
-            </button>
+        {fileName ? (
+          <div className="pr-4">
+            <p className="text-xs font-medium text-foreground truncate font-mono">
+              {fileName}
+            </p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">
+              Drop to replace
+            </p>
           </div>
-          <a
-            href="https://github.com/anthonytoyco/arrt"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="aspect-square py-2 flex items-center justify-center hover:text-black/50 transition-colors"
-            aria-label="GitHub"
-          >
-            <Github size={18} strokeWidth={1.5} />
-          </a>
-        </div>
-      </header>
-
-      {/* Spacer */}
-      <div className="flex-1" />
-
-      {/* Yosemite wordmark — sits flush at the bottom */}
-      <div className="shrink-0 flex justify-center" style={{ height: "24vw" }}>
-        <span
-          className="leading-none select-none"
-          style={{
-            fontFamily: "var(--font-space-grotesk)",
-            fontWeight: 700,
-            fontSize: "20vw",
-            letterSpacing: "-0.03em",
-            whiteSpace: "nowrap",
-          }}
-        >
-          yosem
-          <span className="relative inline-block">
-            {/* Dotless i (U+0131) — logo replaces the tittle */}
-            &#305;
-            <Image
-              src="/yosemite_logo.png"
-              alt=""
-              width={48}
-              height={48}
-              className="absolute pointer-events-none"
-              style={{
-                width: "0.28em",
-                height: "auto",
-                top: "0.04em",
-                left: "50%",
-                transform: "translateX(-50%)",
-              }}
-            />
-          </span>
-          te
-        </span>
+        ) : (
+          <div className="flex flex-col items-center gap-1.5">
+            <Upload className="h-4 w-4 text-muted-foreground" />
+            <p className="text-xs text-muted-foreground">
+              Drop CSV/PDF or click to browse
+            </p>
+            <p className="text-[11px] text-muted-foreground/60">{hint}</p>
+          </div>
+        )}
       </div>
-
-      {/* Auth Modal */}
-      {modalOpen && (
-        <div
-          className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 backdrop-blur-[2px]"
+      {fileName && onRemove && (
+        <button
           onClick={(e) => {
-            if (e.target === e.currentTarget) setModalOpen(false);
+            e.stopPropagation();
+            onRemove();
           }}
+          className="absolute top-1.5 right-1.5 h-5 w-5 border border-border hover:border-foreground/40 hover:text-destructive flex items-center justify-center text-muted-foreground transition-colors"
+          title="Remove file"
         >
-          <div className="bg-white border border-black w-full max-w-sm">
-            {/* Modal header */}
-            <div className="flex items-center justify-between px-7 py-5 border-b border-black">
-              <span className="text-xs font-medium tracking-widest lowercase">
-                {mode === "login" ? "Sign In" : "Create Account"}
-              </span>
-              <button
-                onClick={() => setModalOpen(false)}
-                className="text-black/40 hover:text-black transition-colors text-lg leading-none"
-                aria-label="Close"
-              >
-                ×
-              </button>
-            </div>
-
-            {/* Modal form */}
-            <form onSubmit={handleSubmit} className="px-7 py-6 space-y-4">
-              <div className="space-y-1.5">
-                <label
-                  htmlFor="email"
-                  className="text-[11px] font-medium tracking-widest lowercase text-black/60"
-                >
-                  Email
-                </label>
-                <input
-                  id="email"
-                  type="email"
-                  autoComplete="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full border border-black bg-white px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-black placeholder:text-black/30"
-                  placeholder="you@example.com"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label
-                  htmlFor="password"
-                  className="text-[11px] font-medium tracking-widest lowercase text-black/60"
-                >
-                  Password
-                </label>
-                <input
-                  id="password"
-                  type="password"
-                  autoComplete={
-                    mode === "register" ? "new-password" : "current-password"
-                  }
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full border border-black bg-white px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-black placeholder:text-black/30"
-                  placeholder="••••••••"
-                />
-              </div>
-
-              {error && (
-                <p className="text-xs text-red-600 tracking-wide">{error}</p>
-              )}
-
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full bg-black text-white py-2.5 text-xs font-medium tracking-widest lowercase hover:bg-black/80 disabled:opacity-50 transition-colors mt-2"
-              >
-                {loading
-                  ? mode === "login"
-                    ? "Signing in…"
-                    : "Creating account…"
-                  : mode === "login"
-                    ? "Sign In"
-                    : "Create Account"}
-              </button>
-            </form>
-
-            {/* Toggle mode */}
-            <div className="px-7 pb-6">
-              <p className="text-center text-[11px] text-black/50 tracking-wide">
-                {mode === "login"
-                  ? "don't have an account?"
-                  : "already have an account?"}{" "}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMode(mode === "login" ? "register" : "login");
-                    setError(null);
-                  }}
-                  className="text-black underline underline-offset-2 hover:text-black/60 transition-colors"
-                >
-                  {mode === "login" ? "Sign up" : "Sign in"}
-                </button>
-              </p>
-            </div>
-          </div>
-        </div>
+          <span className="text-[10px] font-bold leading-none">✕</span>
+        </button>
       )}
     </div>
   );
 }
-<<<<<<< HEAD
 
 export default function Dashboard() {
   const { user, logout } = useAuth();
@@ -301,8 +204,6 @@ export default function Dashboard() {
   const [agentScanReport, setAgentScanReport] = useState<AgentScanReport | null>(null);
   const [agentScanLoading, setAgentScanLoading] = useState(false);
   const [agentScanDocument, setAgentScanDocument] = useState<File | null>(null);
-  const [seedDemoLoading, setSeedDemoLoading] = useState(false);
-  const [seedDemoMessage, setSeedDemoMessage] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -379,7 +280,7 @@ export default function Dashboard() {
     setError(null);
     setAgentScanReport(null);
     try {
-      const transactions = await fetchTransactions({ limit: 500 });
+      const transactions = await fetchTransactions();
       if (transactions.length === 0) {
         setError("No transactions in the database. Add transactions first.");
         return;
@@ -1206,34 +1107,8 @@ export default function Dashboard() {
                   Full AI fraud analysis
                 </p>
                 <p className="text-sm text-foreground/80">
-                  Run the full AI fraud analysis pipeline: anomaly detection, Benford&apos;s Law, duplicate detection, graph analysis, and behavioral velocity on all transactions in the database. Use &quot;Load demo transactions&quot; first to seed the DB from <code className="text-xs bg-muted px-1 rounded">scripts/demo/transactions_agent_scan_demo.csv</code> so velocity, graph, sequence, and GNN have proper data.
+                  Run the multi-agent pipeline (anomaly detection, Benford&apos;s Law, duplicate detection, graph analysis) on all transactions in the database.
                 </p>
-                <div className="flex flex-wrap items-center gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="font-mono text-xs"
-                    disabled={seedDemoLoading}
-                    onClick={async () => {
-                      setSeedDemoLoading(true);
-                      setSeedDemoMessage(null);
-                      setError(null);
-                      try {
-                        const r = await seedDemoTransactions();
-                        setSeedDemoMessage(`Loaded ${r.loaded} demo transactions. You can run the analysis now.`);
-                      } catch (e) {
-                        setError(e instanceof Error ? e.message : "Seed demo failed.");
-                        setSeedDemoMessage(null);
-                      } finally {
-                        setSeedDemoLoading(false);
-                      }
-                    }}
-                  >
-                    {seedDemoLoading ? "Loading…" : "Load demo transactions"}
-                  </Button>
-                  {seedDemoMessage && <span className="text-xs text-muted-foreground">{seedDemoMessage}</span>}
-                </div>
                 <div className="space-y-2">
                   <label className="text-xs font-medium text-muted-foreground">
                     Optional: attach a document (PDF/image) for VLM fraud analysis
@@ -1274,11 +1149,6 @@ export default function Dashboard() {
                         <p className="text-[10px] font-medium text-muted-foreground tracking-[0.2em] uppercase">
                           Report
                         </p>
-                        {agentScanReport.duration_ms != null && (
-                          <p className="text-xs text-muted-foreground">
-                            Analysis completed in {agentScanReport.duration_ms.toLocaleString()} ms
-                          </p>
-                        )}
                         <p className="font-medium capitalize text-foreground">
                           Risk level: {agentScanReport.risk_level}
                         </p>
@@ -1308,21 +1178,6 @@ export default function Dashboard() {
                               Document (VLM): {agentScanReport.document_risk_level}
                             </span>
                           )}
-                          {agentScanReport.velocity_flagged_ids && agentScanReport.velocity_flagged_ids.length > 0 && (
-                            <span className="border border-amber-500/50 px-2 py-1 text-amber-700 dark:text-amber-400">
-                              Velocity: {agentScanReport.velocity_flagged_ids.length} flagged
-                            </span>
-                          )}
-                          {agentScanReport.gnn_flagged_ids && agentScanReport.gnn_flagged_ids.length > 0 && (
-                            <span className="border border-amber-500/50 px-2 py-1 text-amber-700 dark:text-amber-400">
-                              GNN: {agentScanReport.gnn_flagged_ids.length} flagged
-                            </span>
-                          )}
-                          {agentScanReport.sequence_flagged_ids && agentScanReport.sequence_flagged_ids.length > 0 && (
-                            <span className="border border-amber-500/50 px-2 py-1 text-amber-700 dark:text-amber-400">
-                              Sequence: {agentScanReport.sequence_flagged_ids.length} flagged
-                            </span>
-                          )}
                         </div>
                         {agentScanReport.graph_summary && (
                           <p className="text-xs text-muted-foreground">{agentScanReport.graph_summary}</p>
@@ -1330,31 +1185,6 @@ export default function Dashboard() {
                         {agentScanReport.document_summary && (
                           <p className="text-xs text-muted-foreground">{agentScanReport.document_summary}</p>
                         )}
-                        {agentScanReport.velocity_summary && (
-                          <p className="text-xs text-muted-foreground">{agentScanReport.velocity_summary}</p>
-                        )}
-                        {agentScanReport.gnn_summary && (
-                          <p className="text-xs text-muted-foreground">{agentScanReport.gnn_summary}</p>
-                        )}
-                        {agentScanReport.sequence_summary && (
-                          <p className="text-xs text-muted-foreground">{agentScanReport.sequence_summary}</p>
-                        )}
-                        {[
-                          agentScanReport.velocity_summary,
-                          agentScanReport.gnn_summary,
-                          agentScanReport.sequence_summary,
-                        ].some(
-                          (s) =>
-                            s &&
-                            (s.includes("Insufficient") ||
-                              s.includes("no edges") ||
-                              s.includes("need at least 2") ||
-                              s.includes("graph too small")),
-                        ) && (
-                            <p className="text-xs text-muted-foreground mt-2 border-t border-border pt-2">
-                              <strong>Why some agents didn&apos;t flag:</strong> Velocity and Sequence need timestamps and multiple transactions per customer; Graph/GNN need transactions that share customer_id or order_id so the graph has edges. If your data has unique customers per row or missing timestamps, those agents report &quot;insufficient data&quot; instead of scores. Seed demo data (see migrations) or use a CSV with timestamp, customer_id, and order_id for full pipeline coverage.
-                            </p>
-                          )}
                         {agentScanReport.review_notes && (
                           <p className="text-xs border-l-2 border-amber-500/50 pl-2 text-foreground/80 italic">
                             Review: {agentScanReport.review_notes}
@@ -2117,5 +1947,3 @@ export default function Dashboard() {
     </div>
   );
 }
-=======
->>>>>>> 700ec0b0eac4c397ecbff43c6b5f15cc2b78be2c

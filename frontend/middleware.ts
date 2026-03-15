@@ -1,15 +1,17 @@
 import { type NextRequest, NextResponse } from "next/server";
 
-export async function proxy(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  const isLoginPage = pathname.startsWith("/login");
+  const isPublicPage = pathname === "/";
   const hasRefreshToken = request.cookies.has("refresh_token");
 
-  if (!isLoginPage && !hasRefreshToken) {
-    return NextResponse.redirect(new URL("/login", request.url));
+  // Redirect authenticated users away from the landing page to the dashboard
+  if (isPublicPage && hasRefreshToken) {
+    return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 
-  if (isLoginPage && hasRefreshToken) {
+  // Redirect unauthenticated users away from protected pages to the landing page
+  if (!isPublicPage && !hasRefreshToken) {
     return NextResponse.redirect(new URL("/", request.url));
   }
 
