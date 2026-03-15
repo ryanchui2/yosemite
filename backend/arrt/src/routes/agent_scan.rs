@@ -2,6 +2,7 @@ use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::auth::middleware::AuthUser;
 use crate::state::AppState;
 
 fn ai_base_url() -> String {
@@ -34,6 +35,7 @@ pub struct AgentScanRequest {
 /// FraudReport (risk_level, summary, anomalous_transaction_ids,
 /// benford_suspicious, duplicate_groups_count, recommendations).
 pub async fn scan(
+    AuthUser(_): AuthUser,
     State(state): State<AppState>,
     Json(payload): Json<AgentScanRequest>,
 ) -> impl IntoResponse {

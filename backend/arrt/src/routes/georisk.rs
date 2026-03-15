@@ -1,4 +1,6 @@
 use axum::{extract::State, http::StatusCode, Json};
+
+use crate::auth::middleware::AuthUser;
 use serde::Deserialize;
 
 use crate::models::fraud::GeoRiskResponse;
@@ -15,6 +17,7 @@ pub struct GeoRiskRequest {
 /// Accept JSON `{ "countries": ["Myanmar", "Nigeria"] }` and return an
 /// AI-generated risk assessment for each country.
 pub async fn analyze(
+    AuthUser(_): AuthUser,
     State(state): State<AppState>,
     Json(payload): Json<GeoRiskRequest>,
 ) -> Result<Json<GeoRiskResponse>, (StatusCode, String)> {

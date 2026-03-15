@@ -1,9 +1,12 @@
 use axum::{routing::{get, post}, Router};
+use axum::http::{HeaderValue, Method};
+use axum::http::header::{AUTHORIZATION, CONTENT_TYPE};
 use sqlx::postgres::PgPoolOptions;
 use std::net::SocketAddr;
-use tower_http::cors::{Any, CorsLayer};
+use tower_http::cors::CorsLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
+mod auth;
 mod models;
 mod routes;
 mod services;
@@ -49,14 +52,21 @@ async fn main() {
         http: reqwest::Client::new(),
         opensanctions_api_key,
     };
+    let frontend_origin = std::env::var("FRONTEND_ORIGIN")
+        .unwrap_or_else(|_| "http://localhost:3000".to_string());
     let cors = CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods(Any)
-        .allow_headers(Any);
+        .allow_origin(frontend_origin.parse::<HeaderValue>().expect("Invalid FRONTEND_ORIGIN"))
+        .allow_methods([Method::GET, Method::POST, Method::DELETE, Method::OPTIONS])
+        .allow_headers([AUTHORIZATION, CONTENT_TYPE])
+        .allow_credentials(true);
 
     let app = Router::new()
         .route("/", get(root))
         .route("/health", get(health))
+        .route("/auth/register", post(auth::handlers::register))
+        .route("/auth/login", post(auth::handlers::login))
+        .route("/auth/refresh", post(auth::handlers::refresh))
+        .route("/auth/logout", post(auth::handlers::logout))
         .route("/api/transactions", get(routes::transactions::list))
         .route("/api/fraud/scan", get(routes::fraud::get_cached_scan).post(routes::fraud::scan))
         .route("/api/fraud/report/summary", get(routes::fraud_report::summary))

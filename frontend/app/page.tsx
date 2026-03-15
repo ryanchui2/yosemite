@@ -8,9 +8,38 @@ import { Button } from "@/components/ui/button";
 import { ProtectionScore } from "@/components/ProtectionScore";
 import { FlaggedTransactions } from "@/components/FlaggedTransactions";
 import { RiskOverview } from "@/components/RiskOverview";
-import { scanSanctions, scanAnomalies, analyzeGeoRisk, fetchCachedFraudScan, fetchFraudReportSummary, saveCsvData, fetchSavedCsvList, saveEntityList, fetchSavedEntityList } from "@/lib/api";
-import type { SanctionsResponse, AnomaliesResponse, GeoRiskResponse, FraudScanResponse, FraudReportSummary, SavedCsvData, AnomalyResult, SavedEntityData } from "@/lib/api";
-import { AlertTriangle, Globe, Shield, Upload, Cuboid, Drama, Ship } from "lucide-react";
+import {
+  scanSanctions,
+  scanAnomalies,
+  analyzeGeoRisk,
+  fetchCachedFraudScan,
+  fetchFraudReportSummary,
+  saveCsvData,
+  fetchSavedCsvList,
+  saveEntityList,
+  fetchSavedEntityList,
+} from "@/lib/api";
+import type {
+  SanctionsResponse,
+  AnomaliesResponse,
+  GeoRiskResponse,
+  FraudScanResponse,
+  FraudReportSummary,
+  SavedCsvData,
+  AnomalyResult,
+  SavedEntityData,
+} from "@/lib/api";
+import {
+  AlertTriangle,
+  Globe,
+  Shield,
+  Upload,
+  Cuboid,
+  Drama,
+  Ship,
+  LogOut,
+} from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
 import Image from "next/image";
 
 type SidebarTab = "overview" | "anomaly" | "geosanctions";
@@ -23,30 +52,49 @@ function parseCSVLine(line: string): string[] {
   for (let i = 0; i < line.length; i++) {
     const ch = line[i];
     if (inQuotes) {
-      if (ch === '"' && line[i + 1] === '"') { current += '"'; i++; }
-      else if (ch === '"') { inQuotes = false; }
-      else { current += ch; }
+      if (ch === '"' && line[i + 1] === '"') {
+        current += '"';
+        i++;
+      } else if (ch === '"') {
+        inQuotes = false;
+      } else {
+        current += ch;
+      }
     } else {
-      if (ch === '"') { inQuotes = true; }
-      else if (ch === ',') { values.push(current.trim()); current = ""; }
-      else { current += ch; }
+      if (ch === '"') {
+        inQuotes = true;
+      } else if (ch === ",") {
+        values.push(current.trim());
+        current = "";
+      } else {
+        current += ch;
+      }
     }
   }
   values.push(current.trim());
   return values;
 }
 
-function parseCSV(text: string): { headers: string[]; rows: Record<string, string>[] } {
+function parseCSV(text: string): {
+  headers: string[];
+  rows: Record<string, string>[];
+} {
   const lines = text.trim().split(/\r?\n/);
   const headers = parseCSVLine(lines[0]);
-  const rows = lines.slice(1).filter(Boolean).map((line) => {
-    const values = parseCSVLine(line);
-    return Object.fromEntries(headers.map((h, i) => [h, values[i] ?? ""]));
-  });
+  const rows = lines
+    .slice(1)
+    .filter(Boolean)
+    .map((line) => {
+      const values = parseCSVLine(line);
+      return Object.fromEntries(headers.map((h, i) => [h, values[i] ?? ""]));
+    });
   return { headers, rows };
 }
 
-function rowsToCSVFile(headers: string[], rows: Record<string, string>[]): File {
+function rowsToCSVFile(
+  headers: string[],
+  rows: Record<string, string>[],
+): File {
   const quote = (v: string) => `"${v.replace(/"/g, '""')}"`;
   const lines = [
     headers.map(quote).join(","),
@@ -73,9 +121,17 @@ function DropZone({
   return (
     <div className="relative">
       <div
-        onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+        onDragOver={(e) => {
+          e.preventDefault();
+          setDragging(true);
+        }}
         onDragLeave={() => setDragging(false)}
-        onDrop={(e) => { e.preventDefault(); setDragging(false); const f = e.dataTransfer.files[0]; if (f) onFile(f); }}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragging(false);
+          const f = e.dataTransfer.files[0];
+          if (f) onFile(f);
+        }}
         onClick={() => inputRef.current?.click()}
         className={`border border-border px-4 py-5 text-center cursor-pointer transition-all ${dragging ? "border-foreground bg-accent" : "hover:border-foreground/40"}`}
       >
@@ -84,24 +140,36 @@ function DropZone({
           type="file"
           accept=".csv,.pdf"
           className="hidden"
-          onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f); }}
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) onFile(f);
+          }}
         />
         {fileName ? (
           <div className="pr-4">
-            <p className="text-xs font-medium text-foreground truncate font-mono">{fileName}</p>
-            <p className="text-[11px] text-muted-foreground mt-0.5">Drop to replace</p>
+            <p className="text-xs font-medium text-foreground truncate font-mono">
+              {fileName}
+            </p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">
+              Drop to replace
+            </p>
           </div>
         ) : (
           <div className="flex flex-col items-center gap-1.5">
             <Upload className="h-4 w-4 text-muted-foreground" />
-            <p className="text-xs text-muted-foreground">Drop CSV/PDF or click to browse</p>
+            <p className="text-xs text-muted-foreground">
+              Drop CSV/PDF or click to browse
+            </p>
             <p className="text-[11px] text-muted-foreground/60">{hint}</p>
           </div>
         )}
       </div>
       {fileName && onRemove && (
         <button
-          onClick={(e) => { e.stopPropagation(); onRemove(); }}
+          onClick={(e) => {
+            e.stopPropagation();
+            onRemove();
+          }}
           className="absolute top-1.5 right-1.5 h-5 w-5 border border-border hover:border-foreground/40 hover:text-destructive flex items-center justify-center text-muted-foreground transition-colors"
           title="Remove file"
         >
@@ -113,41 +181,88 @@ function DropZone({
 }
 
 export default function Dashboard() {
+  const { user, logout } = useAuth();
   const [activeTab, setActiveTab] = useState<SidebarTab>("overview");
 
-  const [sanctionsData, setSanctionsData] = useState<SanctionsResponse | null>(null);
-  const [anomaliesData, setAnomaliesData] = useState<AnomaliesResponse | null>(null);
+  const [sanctionsData, setSanctionsData] = useState<SanctionsResponse | null>(
+    null,
+  );
+  const [anomaliesData, setAnomaliesData] = useState<AnomaliesResponse | null>(
+    null,
+  );
   const [geoRiskData, setGeoRiskData] = useState<GeoRiskResponse | null>(null);
-  const [fraudScanData, setFraudScanData] = useState<FraudScanResponse | null>(null);
-  const [fraudReportSummary, setFraudReportSummary] = useState<FraudReportSummary | null>(null);
+  const [fraudScanData, setFraudScanData] = useState<FraudScanResponse | null>(
+    null,
+  );
+  const [fraudReportSummary, setFraudReportSummary] =
+    useState<FraudReportSummary | null>(null);
   const [fraudScanLoading, setFraudScanLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
     setFraudScanLoading(true);
     // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/a3ba57d6-4434-4c97-9efb-bd3955e640d5', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'page.tsx:mount-fraud-effect', message: 'Overview fraud load effect running', data: { hypothesisId: 'H1' }, timestamp: Date.now() }) }).catch(() => { });
+    fetch("http://127.0.0.1:7242/ingest/a3ba57d6-4434-4c97-9efb-bd3955e640d5", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        location: "page.tsx:mount-fraud-effect",
+        message: "Overview fraud load effect running",
+        data: { hypothesisId: "H1" },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
     // #endregion
     const runCachedScan = () => {
       // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/a3ba57d6-4434-4c97-9efb-bd3955e640d5', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'page.tsx:fetchCachedFraudScan-call', message: 'Calling fetchCachedFraudScan (GET)', data: { hypothesisId: 'H1', runId: 'post-fix' }, timestamp: Date.now() }) }).catch(() => { });
+      fetch(
+        "http://127.0.0.1:7242/ingest/a3ba57d6-4434-4c97-9efb-bd3955e640d5",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            location: "page.tsx:fetchCachedFraudScan-call",
+            message: "Calling fetchCachedFraudScan (GET)",
+            data: { hypothesisId: "H1", runId: "post-fix" },
+            timestamp: Date.now(),
+          }),
+        },
+      ).catch(() => {});
       // #endregion
       return fetchCachedFraudScan();
     };
     const runSummary = () => {
       // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/a3ba57d6-4434-4c97-9efb-bd3955e640d5', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'page.tsx:fetchSummary-call', message: 'Calling fetchFraudReportSummary (GET)', data: { hypothesisId: 'H1', runId: 'post-fix' }, timestamp: Date.now() }) }).catch(() => { });
+      fetch(
+        "http://127.0.0.1:7242/ingest/a3ba57d6-4434-4c97-9efb-bd3955e640d5",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            location: "page.tsx:fetchSummary-call",
+            message: "Calling fetchFraudReportSummary (GET)",
+            data: { hypothesisId: "H1", runId: "post-fix" },
+            timestamp: Date.now(),
+          }),
+        },
+      ).catch(() => {});
       // #endregion
       return fetchFraudReportSummary();
     };
     Promise.allSettled([runCachedScan(), runSummary()])
       .then(([scanResult, summaryResult]) => {
         if (cancelled) return;
-        if (scanResult.status === "fulfilled") setFraudScanData(scanResult.value);
-        if (summaryResult.status === "fulfilled") setFraudReportSummary(summaryResult.value);
+        if (scanResult.status === "fulfilled")
+          setFraudScanData(scanResult.value);
+        if (summaryResult.status === "fulfilled")
+          setFraudReportSummary(summaryResult.value);
       })
-      .finally(() => { if (!cancelled) setFraudScanLoading(false); });
-    return () => { cancelled = true; };
+      .finally(() => {
+        if (!cancelled) setFraudScanLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const fraudResults = fraudScanData?.results ?? [];
@@ -157,7 +272,8 @@ export default function Dashboard() {
   const protectionScore = (() => {
     const components: number[] = [];
     if (anomaliesData && anomaliesData.total_transactions > 0) {
-      const pct = (anomaliesData.flagged / anomaliesData.total_transactions) * 100;
+      const pct =
+        (anomaliesData.flagged / anomaliesData.total_transactions) * 100;
       components.push(Math.max(0, 100 - pct));
     }
     if (sanctionsData && sanctionsData.total_entities > 0) {
@@ -166,14 +282,14 @@ export default function Dashboard() {
     }
     if (geoRiskData && geoRiskData.results.length > 0) {
       const geoFlagged = geoRiskData.results.filter(
-        (r) => r.risk_level === "CRITICAL" || r.risk_level === "HIGH"
+        (r) => r.risk_level === "CRITICAL" || r.risk_level === "HIGH",
       ).length;
       const pct = (geoFlagged / geoRiskData.results.length) * 100;
       components.push(Math.max(0, 100 - pct));
     }
     if (components.length === 0) return 100;
     return Math.round(
-      components.reduce((a, b) => a + b, 0) / components.length
+      components.reduce((a, b) => a + b, 0) / components.length,
     );
   })();
 
@@ -187,24 +303,47 @@ export default function Dashboard() {
   const [csvOriginalFile, setCsvOriginalFile] = useState<File | null>(null);
 
   type ManualTx = {
-    customer_name: string; timestamp: string; amount: string; currency: string;
-    payment_method: string; card_brand: string; card_last4: string;
-    ip_country: string; ip_is_vpn: boolean; device_type: string;
-    cvv_match: boolean; address_match: boolean;
+    customer_name: string;
+    timestamp: string;
+    amount: string;
+    currency: string;
+    payment_method: string;
+    card_brand: string;
+    card_last4: string;
+    ip_country: string;
+    ip_is_vpn: boolean;
+    device_type: string;
+    cvv_match: boolean;
+    address_match: boolean;
   };
   const emptyTx: ManualTx = {
-    customer_name: "", timestamp: "", amount: "", currency: "CAD",
-    payment_method: "credit_card", card_brand: "Visa", card_last4: "",
-    ip_country: "", ip_is_vpn: false, device_type: "desktop",
-    cvv_match: true, address_match: true,
+    customer_name: "",
+    timestamp: "",
+    amount: "",
+    currency: "CAD",
+    payment_method: "credit_card",
+    card_brand: "Visa",
+    card_last4: "",
+    ip_country: "",
+    ip_is_vpn: false,
+    device_type: "desktop",
+    cvv_match: true,
+    address_match: true,
   };
   const [manualTransactions, setManualTransactions] = useState<ManualTx[]>([]);
   const [manualTxInput, setManualTxInput] = useState<ManualTx>(emptyTx);
 
   const [sanctionsFile, setSanctionsFile] = useState<File | null>(null);
-  const [uploadedSanctionsEntities, setUploadedSanctionsEntities] = useState<{ description: string; country: string }[]>([]);
-  const [manualEntities, setManualEntities] = useState<{ description: string; country: string }[]>([]);
-  const [manualInput, setManualInput] = useState({ description: "", country: "" });
+  const [uploadedSanctionsEntities, setUploadedSanctionsEntities] = useState<
+    { description: string; country: string }[]
+  >([]);
+  const [manualEntities, setManualEntities] = useState<
+    { description: string; country: string }[]
+  >([]);
+  const [manualInput, setManualInput] = useState({
+    description: "",
+    country: "",
+  });
 
   const [error, setError] = useState<string | null>(null);
   const [csvSaveMessage, setCsvSaveMessage] = useState<string | null>(null);
@@ -212,25 +351,42 @@ export default function Dashboard() {
   const [saveLogName, setSaveLogName] = useState("");
   const [lastScannedCount, setLastScannedCount] = useState(0);
 
-  const [entitySaveMessage, setEntitySaveMessage] = useState<string | null>(null);
+  const [entitySaveMessage, setEntitySaveMessage] = useState<string | null>(
+    null,
+  );
   const [entitySaveLoading, setEntitySaveLoading] = useState(false);
   const [saveEntityLogName, setSaveEntityLogName] = useState("");
 
   /** Parse a CSV string into entity rows using same column rules as backend (description|name|entity_name|company|vendor|customer_name, country|ip_country). */
-  function parseSanctionsCsv(text: string): { description: string; country: string }[] {
+  function parseSanctionsCsv(
+    text: string,
+  ): { description: string; country: string }[] {
     const lines = text.trim().split(/\r?\n/);
     if (lines.length < 2) return [];
-    const hdrs = lines[0].split(",").map((h) => h.trim().replace(/^"|"$/g, "").toLowerCase());
-    const entityNameColumns = ["description", "name", "entity_name", "company", "vendor", "customer_name"];
+    const hdrs = lines[0]
+      .split(",")
+      .map((h) => h.trim().replace(/^"|"$/g, "").toLowerCase());
+    const entityNameColumns = [
+      "description",
+      "name",
+      "entity_name",
+      "company",
+      "vendor",
+      "customer_name",
+    ];
     const entityCol = entityNameColumns.find((col) => hdrs.includes(col));
     const nameIdx = entityCol !== undefined ? hdrs.indexOf(entityCol) : -1;
-    const countryIdx = hdrs.indexOf("country") !== -1 ? hdrs.indexOf("country") : hdrs.indexOf("ip_country");
+    const countryIdx =
+      hdrs.indexOf("country") !== -1
+        ? hdrs.indexOf("country")
+        : hdrs.indexOf("ip_country");
     const out: { description: string; country: string }[] = [];
     if (nameIdx === -1) return [];
     for (const line of lines.slice(1)) {
       const vals = line.split(",").map((v) => v.trim().replace(/^"|"$/g, ""));
       const desc = vals[nameIdx];
-      if (desc) out.push({ description: desc, country: vals[countryIdx] ?? "" });
+      if (desc)
+        out.push({ description: desc, country: vals[countryIdx] ?? "" });
     }
     return out;
   }
@@ -240,7 +396,10 @@ export default function Dashboard() {
     setCsvFileName(file.name);
     setAnomaliesData(null);
     setError(null);
-    if (file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")) {
+    if (
+      file.type === "application/pdf" ||
+      file.name.toLowerCase().endsWith(".pdf")
+    ) {
       setCsvHeaders([]);
       setCsvRows([]);
     } else {
@@ -254,15 +413,17 @@ export default function Dashboard() {
           return merged.length ? merged : newHeaders;
         });
         setCsvRows((prevRows) => {
-          const mergedHeaders = csvHeaders.length ? [...csvHeaders] : [...newHeaders];
+          const mergedHeaders = csvHeaders.length
+            ? [...csvHeaders]
+            : [...newHeaders];
           for (const h of newHeaders) {
             if (!mergedHeaders.includes(h)) mergedHeaders.push(h);
           }
           const existingRows = prevRows.map((r) =>
-            Object.fromEntries(mergedHeaders.map((col) => [col, r[col] ?? ""]))
+            Object.fromEntries(mergedHeaders.map((col) => [col, r[col] ?? ""])),
           );
           const appended = newRows.map((r) =>
-            Object.fromEntries(mergedHeaders.map((col) => [col, r[col] ?? ""]))
+            Object.fromEntries(mergedHeaders.map((col) => [col, r[col] ?? ""])),
           );
           return [...existingRows, ...appended];
         });
@@ -272,10 +433,15 @@ export default function Dashboard() {
 
   function addManualTransaction() {
     if (!manualTxInput.customer_name.trim()) return;
-    setManualTransactions((prev) => [...prev, {
-      ...manualTxInput,
-      timestamp: manualTxInput.timestamp || new Date().toISOString().replace("T", " ").slice(0, 19),
-    }]);
+    setManualTransactions((prev) => [
+      ...prev,
+      {
+        ...manualTxInput,
+        timestamp:
+          manualTxInput.timestamp ||
+          new Date().toISOString().replace("T", " ").slice(0, 19),
+      },
+    ]);
     setManualTxInput(emptyTx);
   }
 
@@ -286,7 +452,10 @@ export default function Dashboard() {
   function addManualEntity() {
     const description = manualInput.description.trim();
     if (!description) return;
-    setManualEntities((prev) => [...prev, { description, country: manualInput.country.trim() }]);
+    setManualEntities((prev) => [
+      ...prev,
+      { description, country: manualInput.country.trim() },
+    ]);
     setManualInput({ description: "", country: "" });
   }
 
@@ -295,13 +464,24 @@ export default function Dashboard() {
   }
 
   async function handleRunAnalysis() {
-    if (!csvRows.length && !manualTransactions.length && !csvOriginalFile) return;
+    if (!csvRows.length && !manualTransactions.length && !csvOriginalFile)
+      return;
     setAnomaliesLoading(true);
     setError(null);
     const TX_HEADERS = [
-      "transaction_id", "customer_name", "timestamp", "amount", "currency",
-      "payment_method", "card_last4", "card_brand", "ip_country", "ip_is_vpn",
-      "device_type", "cvv_match", "address_match",
+      "transaction_id",
+      "customer_name",
+      "timestamp",
+      "amount",
+      "currency",
+      "payment_method",
+      "card_last4",
+      "card_brand",
+      "ip_country",
+      "ip_is_vpn",
+      "device_type",
+      "cvv_match",
+      "address_match",
     ];
     const headers = csvHeaders.length ? csvHeaders : TX_HEADERS;
     const allRows: Record<string, string>[] = [
@@ -325,22 +505,28 @@ export default function Dashboard() {
     const totalRows = allRows.length;
     // Only do incremental (skip already-scanned rows) when we have a prior run and new rows were added
     const doFullScan =
-      lastScannedCount === 0 ||
-      lastScannedCount >= totalRows ||
-      !anomaliesData;
+      lastScannedCount === 0 || lastScannedCount >= totalRows || !anomaliesData;
 
     try {
       let file: File;
       let rowsToSend: Record<string, string>[];
 
-      if (csvOriginalFile && (csvOriginalFile.type === "application/pdf" || csvOriginalFile.name.toLowerCase().endsWith(".pdf"))) {
+      if (
+        csvOriginalFile &&
+        (csvOriginalFile.type === "application/pdf" ||
+          csvOriginalFile.name.toLowerCase().endsWith(".pdf"))
+      ) {
         file = csvOriginalFile;
         setLastScannedCount(0);
         rowsToSend = allRows;
       } else if (doFullScan) {
         setLastScannedCount(0);
         rowsToSend = allRows;
-        if (manualTransactions.length === 0 && csvOriginalFile && totalRows === csvRows.length) {
+        if (
+          manualTransactions.length === 0 &&
+          csvOriginalFile &&
+          totalRows === csvRows.length
+        ) {
           // No manual entries — send the original uploaded file untouched to avoid
           // any lossy parse→reconstruct round-trip corrupting fraud signal columns.
           file = csvOriginalFile;
@@ -359,11 +545,28 @@ export default function Dashboard() {
       }
 
       // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/a3ba57d6-4434-4c97-9efb-bd3955e640d5', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'page.tsx:scanAnomalies-call', message: 'Calling scanAnomalies (user action)', data: { hypothesisId: 'H2' }, timestamp: Date.now() }) }).catch(() => { });
+      fetch(
+        "http://127.0.0.1:7242/ingest/a3ba57d6-4434-4c97-9efb-bd3955e640d5",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            location: "page.tsx:scanAnomalies-call",
+            message: "Calling scanAnomalies (user action)",
+            data: { hypothesisId: "H2" },
+            timestamp: Date.now(),
+          }),
+        },
+      ).catch(() => {});
       // #endregion
       const data = await scanAnomalies(file);
 
-      let finalAnomalyState: { scan_id: string; total_transactions: number; flagged: number; results: AnomalyResult[] };
+      let finalAnomalyState: {
+        scan_id: string;
+        total_transactions: number;
+        flagged: number;
+        results: AnomalyResult[];
+      };
       if (!doFullScan && anomaliesData && data.results.length > 0) {
         const existingResults = anomaliesData.results;
         const newResults = data.results.map((r, i) => ({
@@ -372,7 +575,7 @@ export default function Dashboard() {
         }));
         const mergedResults = [...existingResults, ...newResults];
         const mergedFlagged = mergedResults.filter(
-          (r) => r.risk_level === "HIGH" || r.risk_level === "MEDIUM"
+          (r) => r.risk_level === "HIGH" || r.risk_level === "MEDIUM",
         ).length;
         finalAnomalyState = {
           scan_id: anomaliesData.scan_id,
@@ -396,9 +599,12 @@ export default function Dashboard() {
         headers,
         rows: allRows,
         scan_id: finalAnomalyState.scan_id,
-        scan_summary: { total_transactions: finalAnomalyState.total_transactions, flagged: finalAnomalyState.flagged },
+        scan_summary: {
+          total_transactions: finalAnomalyState.total_transactions,
+          flagged: finalAnomalyState.flagged,
+        },
         scan_results: finalAnomalyState.results,
-      }).catch(() => { });
+      }).catch(() => {});
     } catch {
       setError("Anomaly scan failed. Is the backend running?");
     } finally {
@@ -407,11 +613,24 @@ export default function Dashboard() {
   }
 
   /** Build current transaction set (CSV + manual) for save/scan. */
-  function getCurrentTransactionSet(): { headers: string[]; rows: Record<string, string>[] } {
+  function getCurrentTransactionSet(): {
+    headers: string[];
+    rows: Record<string, string>[];
+  } {
     const TX_HEADERS = [
-      "transaction_id", "customer_name", "timestamp", "amount", "currency",
-      "payment_method", "card_last4", "card_brand", "ip_country", "ip_is_vpn",
-      "device_type", "cvv_match", "address_match",
+      "transaction_id",
+      "customer_name",
+      "timestamp",
+      "amount",
+      "currency",
+      "payment_method",
+      "card_last4",
+      "card_brand",
+      "ip_country",
+      "ip_is_vpn",
+      "device_type",
+      "cvv_match",
+      "address_match",
     ];
     const headers = csvHeaders.length ? csvHeaders : TX_HEADERS;
     const rows: Record<string, string>[] = [
@@ -442,7 +661,9 @@ export default function Dashboard() {
     setCsvSaveLoading(true);
     setCsvSaveMessage(null);
     try {
-      const name = saveLogName.trim() || `Transactions – ${new Date().toLocaleDateString("en-CA", { month: "short", day: "numeric", year: "numeric" })}`;
+      const name =
+        saveLogName.trim() ||
+        `Transactions – ${new Date().toLocaleDateString("en-CA", { month: "short", day: "numeric", year: "numeric" })}`;
       await saveCsvData({
         name,
         stage: anomaliesData ? "after_scan" : "before_scan",
@@ -451,7 +672,10 @@ export default function Dashboard() {
         rows,
         ...(anomaliesData && {
           scan_id: anomaliesData.scan_id,
-          scan_summary: { total_transactions: anomaliesData.total_transactions, flagged: anomaliesData.flagged },
+          scan_summary: {
+            total_transactions: anomaliesData.total_transactions,
+            flagged: anomaliesData.flagged,
+          },
           scan_results: anomaliesData.results,
         }),
       });
@@ -467,18 +691,40 @@ export default function Dashboard() {
   /** Apply a saved log to the workspace (used by auto-load on start and by manual load). */
   const applySavedLog = useCallback((saved: SavedCsvData) => {
     // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/a3ba57d6-4434-4c97-9efb-bd3955e640d5', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'page.tsx:applySavedLog', message: 'Applying saved anomaly log (no scan)', data: { hypothesisId: 'H2' }, timestamp: Date.now() }) }).catch(() => { });
+    fetch("http://127.0.0.1:7242/ingest/a3ba57d6-4434-4c97-9efb-bd3955e640d5", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        location: "page.tsx:applySavedLog",
+        message: "Applying saved anomaly log (no scan)",
+        data: { hypothesisId: "H2" },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
     // #endregion
-    const headers = Array.isArray(saved.headers) ? (saved.headers as string[]) : [];
-    const rows = Array.isArray(saved.rows) ? (saved.rows as Record<string, string>[]) : [];
+    const headers = Array.isArray(saved.headers)
+      ? (saved.headers as string[])
+      : [];
+    const rows = Array.isArray(saved.rows)
+      ? (saved.rows as Record<string, string>[])
+      : [];
     setCsvHeaders(headers);
     setCsvRows(rows);
     setCsvFileName(undefined); // don't show saved file name in drop zone
     setCsvOriginalFile(null);
     setManualTransactions([]);
     setLastScannedCount(rows.length);
-    if (saved.scan_results && saved.scan_summary && typeof saved.scan_summary === "object" && "total_transactions" in saved.scan_summary && "flagged" in saved.scan_summary) {
-      const summary = saved.scan_summary as { total_transactions: number; flagged: number };
+    if (
+      saved.scan_results &&
+      saved.scan_summary &&
+      typeof saved.scan_summary === "object" &&
+      "total_transactions" in saved.scan_summary &&
+      "flagged" in saved.scan_summary
+    ) {
+      const summary = saved.scan_summary as {
+        total_transactions: number;
+        flagged: number;
+      };
       setAnomaliesData({
         scan_id: (saved.scan_id as string) ?? crypto.randomUUID(),
         total_transactions: summary.total_transactions,
@@ -497,12 +743,15 @@ export default function Dashboard() {
       .then((list) => {
         if (cancelled || list.length === 0) return;
         const sorted = [...list].sort(
-          (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+          (a, b) =>
+            new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
         );
         applySavedLog(sorted[0]);
       })
-      .catch(() => { });
-    return () => { cancelled = true; };
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
   }, [applySavedLog]);
 
   /** Current entity list (file + manual) for Geo & Sanctions save. */
@@ -517,7 +766,9 @@ export default function Dashboard() {
     setEntitySaveLoading(true);
     setEntitySaveMessage(null);
     try {
-      const name = saveEntityLogName.trim() || `Entity list – ${new Date().toLocaleDateString("en-CA", { month: "short", day: "numeric", year: "numeric" })}`;
+      const name =
+        saveEntityLogName.trim() ||
+        `Entity list – ${new Date().toLocaleDateString("en-CA", { month: "short", day: "numeric", year: "numeric" })}`;
       await saveEntityList({
         name,
         entities,
@@ -536,19 +787,38 @@ export default function Dashboard() {
   /** Apply a saved entity list to the workspace (used by auto-load on start). */
   const applySavedEntityLog = useCallback((saved: SavedEntityData) => {
     // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/a3ba57d6-4434-4c97-9efb-bd3955e640d5', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'page.tsx:applySavedEntityLog', message: 'Applying saved entity log (no scan)', data: { hypothesisId: 'H3' }, timestamp: Date.now() }) }).catch(() => { });
+    fetch("http://127.0.0.1:7242/ingest/a3ba57d6-4434-4c97-9efb-bd3955e640d5", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        location: "page.tsx:applySavedEntityLog",
+        message: "Applying saved entity log (no scan)",
+        data: { hypothesisId: "H3" },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
     // #endregion
-    const entities = Array.isArray(saved.entities) ? (saved.entities as { description: string; country: string }[]) : [];
+    const entities = Array.isArray(saved.entities)
+      ? (saved.entities as { description: string; country: string }[])
+      : [];
     setSanctionsFile(null);
     setUploadedSanctionsEntities([]);
     setManualEntities(entities);
     setManualInput({ description: "", country: "" });
-    if (saved.sanctions_results && typeof saved.sanctions_results === "object" && "results" in saved.sanctions_results) {
+    if (
+      saved.sanctions_results &&
+      typeof saved.sanctions_results === "object" &&
+      "results" in saved.sanctions_results
+    ) {
       setSanctionsData(saved.sanctions_results as SanctionsResponse);
     } else {
       setSanctionsData(null);
     }
-    if (saved.geo_results && typeof saved.geo_results === "object" && "results" in saved.geo_results) {
+    if (
+      saved.geo_results &&
+      typeof saved.geo_results === "object" &&
+      "results" in saved.geo_results
+    ) {
       setGeoRiskData(saved.geo_results as GeoRiskResponse);
     } else {
       setGeoRiskData(null);
@@ -562,12 +832,15 @@ export default function Dashboard() {
       .then((list) => {
         if (cancelled || list.length === 0) return;
         const sorted = [...list].sort(
-          (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+          (a, b) =>
+            new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
         );
         applySavedEntityLog(sorted[0]);
       })
-      .catch(() => { });
-    return () => { cancelled = true; };
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
   }, [applySavedEntityLog]);
 
   async function handleSanctionsScan() {
@@ -584,30 +857,56 @@ export default function Dashboard() {
           : [];
     const allEntities = [...fileEntities, ...manualEntities];
 
-    const uniqueCountries = [...new Set(allEntities.map((e) => e.country.trim()).filter(Boolean))];
+    const uniqueCountries = [
+      ...new Set(allEntities.map((e) => e.country.trim()).filter(Boolean)),
+    ];
 
     const sanctionsPromise =
       allEntities.length > 0
         ? (() => {
-          const csvContent = "description,country\n" + allEntities.map((e) => `${e.description},${e.country}`).join("\n");
-          const fileToScan = new File([csvContent], "entities.csv", { type: "text/csv" });
-          return scanSanctions(fileToScan);
-        })()
+            const csvContent =
+              "description,country\n" +
+              allEntities
+                .map((e) => `${e.description},${e.country}`)
+                .join("\n");
+            const fileToScan = new File([csvContent], "entities.csv", {
+              type: "text/csv",
+            });
+            return scanSanctions(fileToScan);
+          })()
         : Promise.resolve(null);
 
     const geoPromise =
-      uniqueCountries.length > 0 ? analyzeGeoRisk(uniqueCountries) : Promise.resolve(null);
+      uniqueCountries.length > 0
+        ? analyzeGeoRisk(uniqueCountries)
+        : Promise.resolve(null);
 
     // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/a3ba57d6-4434-4c97-9efb-bd3955e640d5', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'page.tsx:handleSanctionsScan', message: 'Running sanctions/geo scan (user action)', data: { hypothesisId: 'H3' }, timestamp: Date.now() }) }).catch(() => { });
+    fetch("http://127.0.0.1:7242/ingest/a3ba57d6-4434-4c97-9efb-bd3955e640d5", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        location: "page.tsx:handleSanctionsScan",
+        message: "Running sanctions/geo scan (user action)",
+        data: { hypothesisId: "H3" },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
     // #endregion
     try {
-      const [sanctionsResult, geoResult] = await Promise.allSettled([sanctionsPromise, geoPromise]);
-      const newSanctions = sanctionsResult.status === "fulfilled" ? sanctionsResult.value : null;
+      const [sanctionsResult, geoResult] = await Promise.allSettled([
+        sanctionsPromise,
+        geoPromise,
+      ]);
+      const newSanctions =
+        sanctionsResult.status === "fulfilled" ? sanctionsResult.value : null;
       const newGeo = geoResult.status === "fulfilled" ? geoResult.value : null;
       if (newSanctions) setSanctionsData(newSanctions);
       if (newGeo) setGeoRiskData(newGeo);
-      if (sanctionsResult.status === "rejected" || geoResult.status === "rejected") {
+      if (
+        sanctionsResult.status === "rejected" ||
+        geoResult.status === "rejected"
+      ) {
         setError("Some scans failed. Is the backend running?");
       } else if (allEntities.length > 0 && (newSanctions || newGeo)) {
         // Persist scan so it loads on next visit
@@ -616,7 +915,7 @@ export default function Dashboard() {
           entities: allEntities,
           sanctions_results: newSanctions ?? null,
           geo_results: newGeo ?? null,
-        }).catch(() => { });
+        }).catch(() => {});
       }
     } catch {
       setError("Scan failed. Is the backend running?");
@@ -626,10 +925,22 @@ export default function Dashboard() {
     }
   }
 
-  const sidebarItems: { id: SidebarTab; label: string; icon: React.ReactNode }[] = [
+  const sidebarItems: {
+    id: SidebarTab;
+    label: string;
+    icon: React.ReactNode;
+  }[] = [
     { id: "overview", label: "overview", icon: <Cuboid className="h-4 w-4" /> },
-    { id: "anomaly", label: "anomaly detector", icon: <Drama className="h-4 w-4" /> },
-    { id: "geosanctions", label: "geo & sanctions", icon: <Ship className="h-4 w-4" /> },
+    {
+      id: "anomaly",
+      label: "anomaly detector",
+      icon: <Drama className="h-4 w-4" />,
+    },
+    {
+      id: "geosanctions",
+      label: "geo & sanctions",
+      icon: <Ship className="h-4 w-4" />,
+    },
   ];
 
   return (
@@ -637,16 +948,34 @@ export default function Dashboard() {
       {/* Floating header */}
       <header className="fixed top-3 inset-x-4 z-50 flex items-center justify-between px-5 py-3 bg-background/80 border border-border font-heading">
         <div className="flex items-center gap-3">
-          <Image src="/yosemite_logo.png" alt="yosemite logo" width={32} height={32} />
-          <span className="text-[17px] font-semibold tracking-tight text-foreground">yosemite</span>
+          <Image
+            src="/yosemite_logo.png"
+            alt="yosemite logo"
+            width={32}
+            height={32}
+          />
+          <span className="text-[17px] font-semibold tracking-tight text-foreground">
+            yosemite
+          </span>
         </div>
         <div className="flex items-center gap-3">
           {(sanctionsData || anomaliesData || geoRiskData) && (
-            <PDFExport sanctionsData={sanctionsData} anomaliesData={anomaliesData} geoRiskData={geoRiskData} />
+            <PDFExport
+              sanctionsData={sanctionsData}
+              anomaliesData={anomaliesData}
+              geoRiskData={geoRiskData}
+            />
           )}
-          <div className="relative group">
-            <button className="px-4 py-1.5 text-[10px] tracking-wider border border-border hover:border-foreground/40 text-foreground transition-colors font-medium">
-              welcome back, Radiohead
+          <div className="flex items-center gap-2 border border-foreground/20 px-3 py-1.5">
+            <span className="text-[10px] tracking-wider text-muted-foreground">
+              {user?.email}
+            </span>
+            <button
+              onClick={logout}
+              title="Sign out"
+              className="text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <LogOut size={12} />
             </button>
           </div>
         </div>
@@ -660,10 +989,11 @@ export default function Dashboard() {
               <button
                 key={item.id}
                 onClick={() => setActiveTab(item.id)}
-                className={`flex items-center gap-3 px-4 py-2.5 text-xs tracking-wider transition-colors text-left border font-heading ${activeTab === item.id
-                  ? "bg-foreground text-background border-foreground"
-                  : "bg-transparent text-foreground border-border hover:border-foreground/40"
-                  }`}
+                className={`flex items-center gap-3 px-4 py-2.5 text-xs tracking-wider transition-colors text-left border font-heading ${
+                  activeTab === item.id
+                    ? "bg-foreground text-background border-foreground"
+                    : "bg-transparent text-foreground border-border hover:border-foreground/40"
+                }`}
               >
                 {item.icon}
                 {item.label}
@@ -687,7 +1017,9 @@ export default function Dashboard() {
                 {/* Protection Score */}
                 <div className="bg-card p-8 flex justify-center">
                   {fraudScanLoading ? (
-                    <p className="text-xs text-muted-foreground animate-pulse font-mono">Calculating...</p>
+                    <p className="text-xs text-muted-foreground animate-pulse font-mono">
+                      Calculating...
+                    </p>
                   ) : (
                     <ProtectionScore score={protectionScore} />
                   )}
@@ -695,7 +1027,9 @@ export default function Dashboard() {
                 {/* Risk Overview */}
                 <div className="bg-card p-6 flex flex-col">
                   {fraudScanLoading ? (
-                    <p className="text-xs text-muted-foreground animate-pulse font-mono">Analyzing...</p>
+                    <p className="text-xs text-muted-foreground animate-pulse font-mono">
+                      Analyzing...
+                    </p>
                   ) : (
                     <RiskOverview
                       results={fraudResults}
@@ -719,27 +1053,37 @@ export default function Dashboard() {
                       <AlertTriangle className="h-4 w-4 text-foreground" />
                     </div>
                     <div>
-                      <p className="text-sm font-semibold text-foreground">Anomaly Detector</p>
-                      <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Transaction CSV</p>
+                      <p className="text-sm font-semibold text-foreground">
+                        Anomaly Detector
+                      </p>
+                      <p className="text-[10px] text-muted-foreground uppercase tracking-wider">
+                        Transaction CSV
+                      </p>
                     </div>
                   </div>
 
                   <DropZone
                     hint="date, vendor, amount"
                     onFile={handleAnomalyFile}
-                    onRemove={() => { setCsvFileName(undefined); setCsvOriginalFile(null); }}
+                    onRemove={() => {
+                      setCsvFileName(undefined);
+                      setCsvOriginalFile(null);
+                    }}
                     fileName={csvFileName}
                   />
 
                   {csvRows.length > 0 && (
                     <p className="text-[11px] text-muted-foreground text-center font-mono">
-                      {csvRows.length} row{csvRows.length !== 1 ? "s" : ""} loaded
+                      {csvRows.length} row{csvRows.length !== 1 ? "s" : ""}{" "}
+                      loaded
                     </p>
                   )}
 
                   <div className="flex items-center gap-2">
                     <div className="flex-1 h-px bg-border" />
-                    <span className="text-[10px] text-muted-foreground uppercase tracking-wider">or add individually</span>
+                    <span className="text-[10px] text-muted-foreground uppercase tracking-wider">
+                      or add individually
+                    </span>
                     <div className="flex-1 h-px bg-border" />
                   </div>
 
@@ -748,73 +1092,243 @@ export default function Dashboard() {
                     <div className="border border-border p-3 space-y-2">
                       <div className="grid grid-cols-2 gap-2">
                         <div className="space-y-1">
-                          <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Customer Name</label>
-                          <input type="text" value={manualTxInput.customer_name} onChange={(e) => setManualTxInput((p) => ({ ...p, customer_name: e.target.value }))} placeholder="Jane Doe" className="w-full border border-border bg-background px-2.5 py-1.5 text-xs text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground transition-colors" />
+                          <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                            Customer Name
+                          </label>
+                          <input
+                            type="text"
+                            value={manualTxInput.customer_name}
+                            onChange={(e) =>
+                              setManualTxInput((p) => ({
+                                ...p,
+                                customer_name: e.target.value,
+                              }))
+                            }
+                            placeholder="Jane Doe"
+                            className="w-full border border-border bg-background px-2.5 py-1.5 text-xs text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground transition-colors"
+                          />
                         </div>
                         <div className="space-y-1">
-                          <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Date & Time</label>
-                          <input type="datetime-local" value={manualTxInput.timestamp} onChange={(e) => setManualTxInput((p) => ({ ...p, timestamp: e.target.value }))} className="w-full border border-border bg-background px-2.5 py-1.5 text-xs text-foreground focus:outline-none focus:border-foreground transition-colors" />
+                          <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                            Date & Time
+                          </label>
+                          <input
+                            type="datetime-local"
+                            value={manualTxInput.timestamp}
+                            onChange={(e) =>
+                              setManualTxInput((p) => ({
+                                ...p,
+                                timestamp: e.target.value,
+                              }))
+                            }
+                            className="w-full border border-border bg-background px-2.5 py-1.5 text-xs text-foreground focus:outline-none focus:border-foreground transition-colors"
+                          />
                         </div>
                       </div>
                       <div className="grid grid-cols-2 gap-2">
                         <div className="space-y-1">
-                          <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Amount</label>
-                          <input type="number" value={manualTxInput.amount} onChange={(e) => setManualTxInput((p) => ({ ...p, amount: e.target.value }))} placeholder="0.00" className="w-full border border-border bg-background px-2.5 py-1.5 text-xs text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground transition-colors" />
+                          <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                            Amount
+                          </label>
+                          <input
+                            type="number"
+                            value={manualTxInput.amount}
+                            onChange={(e) =>
+                              setManualTxInput((p) => ({
+                                ...p,
+                                amount: e.target.value,
+                              }))
+                            }
+                            placeholder="0.00"
+                            className="w-full border border-border bg-background px-2.5 py-1.5 text-xs text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground transition-colors"
+                          />
                         </div>
                         <div className="space-y-1">
-                          <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Currency</label>
-                          <select value={manualTxInput.currency} onChange={(e) => setManualTxInput((p) => ({ ...p, currency: e.target.value }))} className="w-full border border-border bg-background px-2.5 py-1.5 text-xs text-foreground focus:outline-none focus:border-foreground transition-colors">
-                            {["CAD", "USD", "EUR", "GBP"].map((c) => <option key={c}>{c}</option>)}
+                          <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                            Currency
+                          </label>
+                          <select
+                            value={manualTxInput.currency}
+                            onChange={(e) =>
+                              setManualTxInput((p) => ({
+                                ...p,
+                                currency: e.target.value,
+                              }))
+                            }
+                            className="w-full border border-border bg-background px-2.5 py-1.5 text-xs text-foreground focus:outline-none focus:border-foreground transition-colors"
+                          >
+                            {["CAD", "USD", "EUR", "GBP"].map((c) => (
+                              <option key={c}>{c}</option>
+                            ))}
                           </select>
                         </div>
                       </div>
                       <div className="grid grid-cols-3 gap-2">
                         <div className="space-y-1">
-                          <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Payment</label>
-                          <select value={manualTxInput.payment_method} onChange={(e) => setManualTxInput((p) => ({ ...p, payment_method: e.target.value }))} className="w-full border border-border bg-background px-2.5 py-1.5 text-xs text-foreground focus:outline-none focus:border-foreground transition-colors">
-                            {["credit_card", "debit", "cash", "bank_transfer"].map((m) => <option key={m} value={m}>{m.replace("_", " ")}</option>)}
+                          <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                            Payment
+                          </label>
+                          <select
+                            value={manualTxInput.payment_method}
+                            onChange={(e) =>
+                              setManualTxInput((p) => ({
+                                ...p,
+                                payment_method: e.target.value,
+                              }))
+                            }
+                            className="w-full border border-border bg-background px-2.5 py-1.5 text-xs text-foreground focus:outline-none focus:border-foreground transition-colors"
+                          >
+                            {[
+                              "credit_card",
+                              "debit",
+                              "cash",
+                              "bank_transfer",
+                            ].map((m) => (
+                              <option key={m} value={m}>
+                                {m.replace("_", " ")}
+                              </option>
+                            ))}
                           </select>
                         </div>
                         <div className="space-y-1">
-                          <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Card Brand</label>
-                          <select value={manualTxInput.card_brand} onChange={(e) => setManualTxInput((p) => ({ ...p, card_brand: e.target.value }))} className="w-full border border-border bg-background px-2.5 py-1.5 text-xs text-foreground focus:outline-none focus:border-foreground transition-colors">
-                            {["Visa", "Mastercard", "Amex", "Discover"].map((b) => <option key={b}>{b}</option>)}
+                          <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                            Card Brand
+                          </label>
+                          <select
+                            value={manualTxInput.card_brand}
+                            onChange={(e) =>
+                              setManualTxInput((p) => ({
+                                ...p,
+                                card_brand: e.target.value,
+                              }))
+                            }
+                            className="w-full border border-border bg-background px-2.5 py-1.5 text-xs text-foreground focus:outline-none focus:border-foreground transition-colors"
+                          >
+                            {["Visa", "Mastercard", "Amex", "Discover"].map(
+                              (b) => (
+                                <option key={b}>{b}</option>
+                              ),
+                            )}
                           </select>
                         </div>
                         <div className="space-y-1">
-                          <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Last 4</label>
-                          <input type="text" maxLength={4} value={manualTxInput.card_last4} onChange={(e) => setManualTxInput((p) => ({ ...p, card_last4: e.target.value.replace(/\D/g, "").slice(0, 4) }))} placeholder="0000" className="w-full border border-border bg-background px-2.5 py-1.5 text-xs text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground transition-colors font-mono" />
+                          <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                            Last 4
+                          </label>
+                          <input
+                            type="text"
+                            maxLength={4}
+                            value={manualTxInput.card_last4}
+                            onChange={(e) =>
+                              setManualTxInput((p) => ({
+                                ...p,
+                                card_last4: e.target.value
+                                  .replace(/\D/g, "")
+                                  .slice(0, 4),
+                              }))
+                            }
+                            placeholder="0000"
+                            className="w-full border border-border bg-background px-2.5 py-1.5 text-xs text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground transition-colors font-mono"
+                          />
                         </div>
                       </div>
                       <div className="grid grid-cols-2 gap-2">
                         <div className="space-y-1">
-                          <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">IP Country</label>
-                          <input type="text" value={manualTxInput.ip_country} onChange={(e) => setManualTxInput((p) => ({ ...p, ip_country: e.target.value.toUpperCase().slice(0, 2) }))} placeholder="CA" className="w-full border border-border bg-background px-2.5 py-1.5 text-xs text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground transition-colors uppercase" />
+                          <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                            IP Country
+                          </label>
+                          <input
+                            type="text"
+                            value={manualTxInput.ip_country}
+                            onChange={(e) =>
+                              setManualTxInput((p) => ({
+                                ...p,
+                                ip_country: e.target.value
+                                  .toUpperCase()
+                                  .slice(0, 2),
+                              }))
+                            }
+                            placeholder="CA"
+                            className="w-full border border-border bg-background px-2.5 py-1.5 text-xs text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground transition-colors uppercase"
+                          />
                         </div>
                         <div className="space-y-1">
-                          <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Device</label>
-                          <select value={manualTxInput.device_type} onChange={(e) => setManualTxInput((p) => ({ ...p, device_type: e.target.value }))} className="w-full border border-border bg-background px-2.5 py-1.5 text-xs text-foreground focus:outline-none focus:border-foreground transition-colors">
-                            {["desktop", "mobile", "tablet"].map((d) => <option key={d}>{d}</option>)}
+                          <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                            Device
+                          </label>
+                          <select
+                            value={manualTxInput.device_type}
+                            onChange={(e) =>
+                              setManualTxInput((p) => ({
+                                ...p,
+                                device_type: e.target.value,
+                              }))
+                            }
+                            className="w-full border border-border bg-background px-2.5 py-1.5 text-xs text-foreground focus:outline-none focus:border-foreground transition-colors"
+                          >
+                            {["desktop", "mobile", "tablet"].map((d) => (
+                              <option key={d}>{d}</option>
+                            ))}
                           </select>
                         </div>
                       </div>
                       <div className="flex items-center gap-4 pt-1">
                         <label className="flex items-center gap-1.5 cursor-pointer">
-                          <input type="checkbox" checked={manualTxInput.cvv_match} onChange={(e) => setManualTxInput((p) => ({ ...p, cvv_match: e.target.checked }))} className="accent-foreground" />
-                          <span className="text-xs text-muted-foreground">CVV Match</span>
+                          <input
+                            type="checkbox"
+                            checked={manualTxInput.cvv_match}
+                            onChange={(e) =>
+                              setManualTxInput((p) => ({
+                                ...p,
+                                cvv_match: e.target.checked,
+                              }))
+                            }
+                            className="accent-foreground"
+                          />
+                          <span className="text-xs text-muted-foreground">
+                            CVV Match
+                          </span>
                         </label>
                         <label className="flex items-center gap-1.5 cursor-pointer">
-                          <input type="checkbox" checked={manualTxInput.address_match} onChange={(e) => setManualTxInput((p) => ({ ...p, address_match: e.target.checked }))} className="accent-foreground" />
-                          <span className="text-xs text-muted-foreground">Address Match</span>
+                          <input
+                            type="checkbox"
+                            checked={manualTxInput.address_match}
+                            onChange={(e) =>
+                              setManualTxInput((p) => ({
+                                ...p,
+                                address_match: e.target.checked,
+                              }))
+                            }
+                            className="accent-foreground"
+                          />
+                          <span className="text-xs text-muted-foreground">
+                            Address Match
+                          </span>
                         </label>
                         <label className="flex items-center gap-1.5 cursor-pointer">
-                          <input type="checkbox" checked={manualTxInput.ip_is_vpn} onChange={(e) => setManualTxInput((p) => ({ ...p, ip_is_vpn: e.target.checked }))} className="accent-foreground" />
-                          <span className="text-xs text-muted-foreground">VPN</span>
+                          <input
+                            type="checkbox"
+                            checked={manualTxInput.ip_is_vpn}
+                            onChange={(e) =>
+                              setManualTxInput((p) => ({
+                                ...p,
+                                ip_is_vpn: e.target.checked,
+                              }))
+                            }
+                            className="accent-foreground"
+                          />
+                          <span className="text-xs text-muted-foreground">
+                            VPN
+                          </span>
                         </label>
                       </div>
                     </div>
 
-                    <button onClick={addManualTransaction} disabled={!manualTxInput.customer_name.trim()} className="w-full border border-border hover:border-foreground/40 hover:bg-accent disabled:opacity-30 disabled:cursor-not-allowed text-foreground text-xs py-2 transition-colors uppercase tracking-wider font-medium">
+                    <button
+                      onClick={addManualTransaction}
+                      disabled={!manualTxInput.customer_name.trim()}
+                      className="w-full border border-border hover:border-foreground/40 hover:bg-accent disabled:opacity-30 disabled:cursor-not-allowed text-foreground text-xs py-2 transition-colors uppercase tracking-wider font-medium"
+                    >
                       + Add Transaction
                     </button>
 
@@ -823,22 +1337,47 @@ export default function Dashboard() {
                         <table className="w-full text-xs">
                           <thead>
                             <tr className="bg-accent text-muted-foreground uppercase tracking-wider">
-                              <th className="px-3 py-2 text-left font-medium">Name</th>
-                              <th className="px-3 py-2 text-left font-medium">Payment</th>
-                              <th className="px-3 py-2 text-right font-medium">Amount</th>
+                              <th className="px-3 py-2 text-left font-medium">
+                                Name
+                              </th>
+                              <th className="px-3 py-2 text-left font-medium">
+                                Payment
+                              </th>
+                              <th className="px-3 py-2 text-right font-medium">
+                                Amount
+                              </th>
                               <th className="w-8" />
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-border">
                             {manualTransactions.map((t, i) => (
-                              <tr key={i} className="hover:bg-accent/50 transition-colors">
-                                <td className="px-3 py-2 font-medium text-foreground truncate max-w-[90px]">{t.customer_name}</td>
-                                <td className="px-3 py-2 text-muted-foreground">{t.card_brand} · {t.payment_method.replace("_", " ")}</td>
+                              <tr
+                                key={i}
+                                className="hover:bg-accent/50 transition-colors"
+                              >
+                                <td className="px-3 py-2 font-medium text-foreground truncate max-w-[90px]">
+                                  {t.customer_name}
+                                </td>
+                                <td className="px-3 py-2 text-muted-foreground">
+                                  {t.card_brand} ·{" "}
+                                  {t.payment_method.replace("_", " ")}
+                                </td>
                                 <td className="px-3 py-2 text-right font-mono text-foreground">
-                                  {t.amount ? `${t.currency} ${Number(t.amount).toLocaleString()}` : <span className="text-muted-foreground">—</span>}
+                                  {t.amount ? (
+                                    `${t.currency} ${Number(t.amount).toLocaleString()}`
+                                  ) : (
+                                    <span className="text-muted-foreground">
+                                      —
+                                    </span>
+                                  )}
                                 </td>
                                 <td className="px-2 py-2 text-right">
-                                  <button onClick={() => removeManualTransaction(i)} className="text-muted-foreground hover:text-destructive transition-colors">✕</button>
+                                  <button
+                                    onClick={() => removeManualTransaction(i)}
+                                    className="text-muted-foreground hover:text-destructive transition-colors"
+                                  >
+                                    ✕
+                                  </button>
                                 </td>
                               </tr>
                             ))}
@@ -848,7 +1387,16 @@ export default function Dashboard() {
                     )}
                   </div>
 
-                  <Button className="w-full" disabled={anomaliesLoading || (csvRows.length === 0 && manualTransactions.length === 0 && !csvOriginalFile)} onClick={handleRunAnalysis}>
+                  <Button
+                    className="w-full"
+                    disabled={
+                      anomaliesLoading ||
+                      (csvRows.length === 0 &&
+                        manualTransactions.length === 0 &&
+                        !csvOriginalFile)
+                    }
+                    onClick={handleRunAnalysis}
+                  >
                     {anomaliesLoading ? "Analyzing..." : "Run Analysis"}
                   </Button>
                   {(csvRows.length > 0 || manualTransactions.length > 0) && (
@@ -872,7 +1420,9 @@ export default function Dashboard() {
                     </div>
                   )}
                   {csvSaveMessage && (
-                    <p className={`text-[11px] font-mono text-center ${csvSaveMessage.startsWith("Saved") ? "text-green-600" : "text-destructive"}`}>
+                    <p
+                      className={`text-[11px] font-mono text-center ${csvSaveMessage.startsWith("Saved") ? "text-green-600" : "text-destructive"}`}
+                    >
                       {csvSaveMessage}
                     </p>
                   )}
@@ -881,7 +1431,9 @@ export default function Dashboard() {
                 {/* Right: Flagged Transactions */}
                 <div className="bg-card p-6 flex flex-col">
                   {fraudScanLoading ? (
-                    <p className="text-xs text-muted-foreground animate-pulse font-mono">Loading...</p>
+                    <p className="text-xs text-muted-foreground animate-pulse font-mono">
+                      Loading...
+                    </p>
                   ) : (
                     <FlaggedTransactions results={fraudResults} />
                   )}
@@ -891,43 +1443,76 @@ export default function Dashboard() {
               {/* Anomaly Report below */}
               <div className="border border-border bg-card">
                 <div className="px-5 py-3 border-b border-border">
-                  <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-[0.2em]">Anomaly Report</span>
+                  <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-[0.2em]">
+                    Anomaly Report
+                  </span>
                 </div>
                 <div className="p-6 space-y-8">
                   {/* Current session */}
-                  {csvHeaders.length > 0 || manualTransactions.length > 0 || csvOriginalFile ? (
+                  {csvHeaders.length > 0 ||
+                  manualTransactions.length > 0 ||
+                  csvOriginalFile ? (
                     <div className="space-y-5">
                       <div className="flex items-center justify-between flex-wrap gap-2">
                         <p className="text-xs text-muted-foreground font-mono">
-                          {(csvOriginalFile?.type === "application/pdf" || csvOriginalFile?.name.toLowerCase().endsWith(".pdf")) ? "1 PDF document" : `${csvRows.length + (csvHeaders.length > 0 ? 0 : manualTransactions.length)} row${(csvRows.length + manualTransactions.length) !== 1 ? "s" : ""} — click any cell to edit`}
+                          {csvOriginalFile?.type === "application/pdf" ||
+                          csvOriginalFile?.name.toLowerCase().endsWith(".pdf")
+                            ? "1 PDF document"
+                            : `${csvRows.length + (csvHeaders.length > 0 ? 0 : manualTransactions.length)} row${csvRows.length + manualTransactions.length !== 1 ? "s" : ""} — click any cell to edit`}
                         </p>
                         <div className="flex items-center gap-2 flex-wrap">
-                          <Button disabled={anomaliesLoading || (csvRows.length === 0 && manualTransactions.length === 0 && !csvOriginalFile)} onClick={handleRunAnalysis}>
+                          <Button
+                            disabled={
+                              anomaliesLoading ||
+                              (csvRows.length === 0 &&
+                                manualTransactions.length === 0 &&
+                                !csvOriginalFile)
+                            }
+                            onClick={handleRunAnalysis}
+                          >
                             {anomaliesLoading ? "Analyzing..." : "Run Analysis"}
                           </Button>
                           <Button
                             type="button"
                             variant="outline"
                             className="border-dashed"
-                            disabled={csvSaveLoading || (csvRows.length === 0 && manualTransactions.length === 0)}
+                            disabled={
+                              csvSaveLoading ||
+                              (csvRows.length === 0 &&
+                                manualTransactions.length === 0)
+                            }
                             onClick={handleSaveTransactionLog}
                           >
-                            {csvSaveLoading ? "Saving..." : "Save transaction log"}
+                            {csvSaveLoading
+                              ? "Saving..."
+                              : "Save transaction log"}
                           </Button>
                         </div>
                       </div>
                       {csvSaveMessage && (
-                        <p className={`text-[11px] font-mono ${csvSaveMessage.startsWith("Saved") ? "text-green-600" : "text-destructive"}`}>
+                        <p
+                          className={`text-[11px] font-mono ${csvSaveMessage.startsWith("Saved") ? "text-green-600" : "text-destructive"}`}
+                        >
                           {csvSaveMessage}
                         </p>
                       )}
-                      {csvHeaders.length > 0 && <CSVDataTable headers={csvHeaders} rows={csvRows} onChange={setCsvRows} />}
-                      {anomaliesData && <ResultsTable type="anomalies" data={anomaliesData} />}
+                      {csvHeaders.length > 0 && (
+                        <CSVDataTable
+                          headers={csvHeaders}
+                          rows={csvRows}
+                          onChange={setCsvRows}
+                        />
+                      )}
+                      {anomaliesData && (
+                        <ResultsTable type="anomalies" data={anomaliesData} />
+                      )}
                     </div>
                   ) : (
                     <div className="py-16 text-center text-muted-foreground">
                       <AlertTriangle className="h-6 w-6 mx-auto mb-3 opacity-30" />
-                      <p className="text-xs uppercase tracking-wider">Upload a transaction CSV or PDF to get started.</p>
+                      <p className="text-xs uppercase tracking-wider">
+                        Upload a transaction CSV or PDF to get started.
+                      </p>
                     </div>
                   )}
                 </div>
@@ -948,8 +1533,12 @@ export default function Dashboard() {
                         <Shield className="h-4 w-4 text-foreground" />
                       </div>
                       <div>
-                        <p className="text-sm font-semibold text-foreground">Sanctions Screener</p>
-                        <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Entity CSV</p>
+                        <p className="text-sm font-semibold text-foreground">
+                          Sanctions Screener
+                        </p>
+                        <p className="text-[10px] text-muted-foreground uppercase tracking-wider">
+                          Entity CSV
+                        </p>
                       </div>
                     </div>
 
@@ -958,7 +1547,9 @@ export default function Dashboard() {
                       onFile={(f) => {
                         setSanctionsFile(f);
                         setError(null);
-                        f.text().then((text) => setUploadedSanctionsEntities(parseSanctionsCsv(text)));
+                        f.text().then((text) =>
+                          setUploadedSanctionsEntities(parseSanctionsCsv(text)),
+                        );
                       }}
                       onRemove={() => {
                         setSanctionsFile(null);
@@ -973,21 +1564,30 @@ export default function Dashboard() {
                     {uploadedSanctionsEntities.length > 0 && (
                       <div className="border border-border overflow-hidden">
                         <p className="text-[10px] text-muted-foreground uppercase tracking-wider px-3 py-2 border-b border-border bg-accent/50">
-                          From your file ({uploadedSanctionsEntities.length} entities)
+                          From your file ({uploadedSanctionsEntities.length}{" "}
+                          entities)
                         </p>
                         <div className="max-h-48 overflow-auto">
                           <table className="w-full text-xs">
                             <thead className="sticky top-0 bg-accent text-muted-foreground uppercase tracking-wider">
                               <tr>
-                                <th className="px-3 py-2 text-left font-medium">Entity</th>
-                                <th className="px-3 py-2 text-left font-medium">Country</th>
+                                <th className="px-3 py-2 text-left font-medium">
+                                  Entity
+                                </th>
+                                <th className="px-3 py-2 text-left font-medium">
+                                  Country
+                                </th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-border">
                               {uploadedSanctionsEntities.map((e, i) => (
                                 <tr key={i} className="hover:bg-accent/30">
-                                  <td className="px-3 py-2 font-medium text-foreground truncate max-w-[180px]">{e.description}</td>
-                                  <td className="px-3 py-2 text-muted-foreground">{e.country || "—"}</td>
+                                  <td className="px-3 py-2 font-medium text-foreground truncate max-w-[180px]">
+                                    {e.description}
+                                  </td>
+                                  <td className="px-3 py-2 text-muted-foreground">
+                                    {e.country || "—"}
+                                  </td>
                                 </tr>
                               ))}
                             </tbody>
@@ -998,16 +1598,53 @@ export default function Dashboard() {
 
                     <div className="flex items-center gap-2">
                       <div className="flex-1 h-px bg-border" />
-                      <span className="text-[10px] text-muted-foreground uppercase tracking-wider">or add individually</span>
+                      <span className="text-[10px] text-muted-foreground uppercase tracking-wider">
+                        or add individually
+                      </span>
                       <div className="flex-1 h-px bg-border" />
                     </div>
 
                     <div className="space-y-2">
                       <div className="grid grid-cols-[1fr_auto_auto] gap-2 items-center">
-                        <input type="text" value={manualInput.description} onChange={(e) => setManualInput((p) => ({ ...p, description: e.target.value }))} onKeyDown={(e) => { if (e.key === "Enter") addManualEntity(); }} placeholder="Entity name" className="border border-border bg-background px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground transition-colors min-w-0" />
-                        <input type="text" value={manualInput.country} onChange={(e) => setManualInput((p) => ({ ...p, country: e.target.value }))} onKeyDown={(e) => { if (e.key === "Enter") addManualEntity(); }} placeholder="Country" className="w-20 border border-border bg-background px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground transition-colors" />
-                        <button onClick={addManualEntity} disabled={!manualInput.description.trim()} className="h-8 w-8 border border-foreground bg-foreground text-background hover:bg-foreground/80 disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center transition-colors" title="Add entity">
-                          <span className="text-base leading-none font-light">+</span>
+                        <input
+                          type="text"
+                          value={manualInput.description}
+                          onChange={(e) =>
+                            setManualInput((p) => ({
+                              ...p,
+                              description: e.target.value,
+                            }))
+                          }
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") addManualEntity();
+                          }}
+                          placeholder="Entity name"
+                          className="border border-border bg-background px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground transition-colors min-w-0"
+                        />
+                        <input
+                          type="text"
+                          value={manualInput.country}
+                          onChange={(e) =>
+                            setManualInput((p) => ({
+                              ...p,
+                              country: e.target.value,
+                            }))
+                          }
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") addManualEntity();
+                          }}
+                          placeholder="Country"
+                          className="w-20 border border-border bg-background px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground transition-colors"
+                        />
+                        <button
+                          onClick={addManualEntity}
+                          disabled={!manualInput.description.trim()}
+                          className="h-8 w-8 border border-foreground bg-foreground text-background hover:bg-foreground/80 disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center transition-colors"
+                          title="Add entity"
+                        >
+                          <span className="text-base leading-none font-light">
+                            +
+                          </span>
                         </button>
                       </div>
 
@@ -1016,18 +1653,38 @@ export default function Dashboard() {
                           <table className="w-full text-xs">
                             <thead>
                               <tr className="bg-accent text-muted-foreground uppercase tracking-wider">
-                                <th className="px-3 py-2 text-left font-medium">Entity</th>
-                                <th className="px-3 py-2 text-left font-medium">Country</th>
+                                <th className="px-3 py-2 text-left font-medium">
+                                  Entity
+                                </th>
+                                <th className="px-3 py-2 text-left font-medium">
+                                  Country
+                                </th>
                                 <th className="w-8" />
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-border">
                               {manualEntities.map((e, i) => (
-                                <tr key={i} className="hover:bg-accent/50 transition-colors">
-                                  <td className="px-3 py-2 font-medium text-foreground truncate max-w-[120px]">{e.description}</td>
-                                  <td className="px-3 py-2 text-muted-foreground">{e.country || <span className="text-muted-foreground/40">—</span>}</td>
+                                <tr
+                                  key={i}
+                                  className="hover:bg-accent/50 transition-colors"
+                                >
+                                  <td className="px-3 py-2 font-medium text-foreground truncate max-w-[120px]">
+                                    {e.description}
+                                  </td>
+                                  <td className="px-3 py-2 text-muted-foreground">
+                                    {e.country || (
+                                      <span className="text-muted-foreground/40">
+                                        —
+                                      </span>
+                                    )}
+                                  </td>
                                   <td className="px-2 py-2 text-right">
-                                    <button onClick={() => removeManualEntity(i)} className="text-muted-foreground hover:text-destructive transition-colors">✕</button>
+                                    <button
+                                      onClick={() => removeManualEntity(i)}
+                                      className="text-muted-foreground hover:text-destructive transition-colors"
+                                    >
+                                      ✕
+                                    </button>
                                   </td>
                                 </tr>
                               ))}
@@ -1040,13 +1697,20 @@ export default function Dashboard() {
 
                   <Button
                     className="w-full"
-                    disabled={(sanctionsLoading || geoRiskLoading) || (!sanctionsFile && manualEntities.length === 0)}
+                    disabled={
+                      sanctionsLoading ||
+                      geoRiskLoading ||
+                      (!sanctionsFile && manualEntities.length === 0)
+                    }
                     onClick={handleSanctionsScan}
                   >
-                    {(sanctionsLoading || geoRiskLoading) ? "Scanning..." : "Run Scan"}
+                    {sanctionsLoading || geoRiskLoading
+                      ? "Scanning..."
+                      : "Run Scan"}
                   </Button>
 
-                  {(uploadedSanctionsEntities.length > 0 || manualEntities.length > 0) && (
+                  {(uploadedSanctionsEntities.length > 0 ||
+                    manualEntities.length > 0) && (
                     <div className="space-y-2">
                       <input
                         type="text"
@@ -1067,7 +1731,9 @@ export default function Dashboard() {
                     </div>
                   )}
                   {entitySaveMessage && (
-                    <p className={`text-[11px] font-mono text-center ${entitySaveMessage.startsWith("Saved") ? "text-green-600" : "text-destructive"}`}>
+                    <p
+                      className={`text-[11px] font-mono text-center ${entitySaveMessage.startsWith("Saved") ? "text-green-600" : "text-destructive"}`}
+                    >
                       {entitySaveMessage}
                     </p>
                   )}
@@ -1075,7 +1741,8 @@ export default function Dashboard() {
 
                 {/* Right: Report */}
                 <div className="bg-card p-6 space-y-6 overflow-auto">
-                  {(uploadedSanctionsEntities.length > 0 || manualEntities.length > 0) && (
+                  {(uploadedSanctionsEntities.length > 0 ||
+                    manualEntities.length > 0) && (
                     <div className="flex items-center justify-end gap-2">
                       <Button
                         type="button"
@@ -1101,7 +1768,10 @@ export default function Dashboard() {
                   {!sanctionsData && !geoRiskData && (
                     <div className="py-16 text-center text-muted-foreground">
                       <Globe className="h-6 w-6 mx-auto mb-3 opacity-30" />
-                      <p className="text-xs uppercase tracking-wider">Add entities (with optional country) and run a scan. Geopolitical risk is shown for countries in your list.</p>
+                      <p className="text-xs uppercase tracking-wider">
+                        Add entities (with optional country) and run a scan.
+                        Geopolitical risk is shown for countries in your list.
+                      </p>
                     </div>
                   )}
                 </div>

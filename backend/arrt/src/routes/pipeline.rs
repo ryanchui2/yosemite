@@ -4,6 +4,8 @@ use axum::{
     Json,
 };
 
+use crate::auth::middleware::AuthUser;
+
 use crate::models::fraud::{
     PipelineOutcome, PipelineResponse, PipelineResult, ScoringTx, TransactionInput,
 };
@@ -24,9 +26,11 @@ const CSV_TYPE: &str = "text/csv";
 /// Routes the input through the correct parsing + scoring + reporting path.
 #[axum::debug_handler]
 pub async fn ingest(
+    AuthUser(claims): AuthUser,
     State(state): State<AppState>,
     mut multipart: Multipart,
 ) -> Result<Json<PipelineResponse>, (StatusCode, String)> {
+    let user_id = uuid::Uuid::parse_str(&claims.sub).ok();
     // ── Extract file bytes and content-type ───────────────────────────────────
     let mut file_bytes: Option<Vec<u8>> = None;
     let mut mime_type = "application/octet-stream".to_string();
@@ -128,6 +132,7 @@ pub async fn ingest(
                 false,
                 vision_summary.as_deref(),
                 None,
+                user_id,
             )
             .await;
 
@@ -162,6 +167,7 @@ pub async fn ingest(
                 true,
                 combined_notes.as_deref(),
                 None,
+                user_id,
             )
             .await;
 
@@ -201,6 +207,7 @@ pub async fn ingest(
                 false,
                 vision_summary.as_deref(),
                 None,
+                user_id,
             )
             .await;
 
@@ -288,6 +295,7 @@ async fn save_fraud_report(
     ai_reviewed: bool,
     ai_review_notes: Option<&str>,
     extra_notes: Option<&str>,
+    user_id: Option<uuid::Uuid>,
 ) {
     let base_notes = format!(
         "Pipeline auto-report. Score: {}. Rules: {}",
@@ -300,8 +308,8 @@ async fn save_fraud_report(
     };
 
     let result = sqlx::query(
-        "INSERT INTO fraud_reports (transaction_id, confirmed_fraud, reported_by, notes, ai_reviewed, ai_review_notes)
-         VALUES ($1, $2, $3, $4, $5, $6)
+        "INSERT INTO fraud_reports (transaction_id, confirmed_fraud, reported_by, notes, ai_reviewed, ai_review_notes, user_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
          ON CONFLICT DO NOTHING"
     )
     .bind(transaction_id)
@@ -310,6 +318,7 @@ async fn save_fraud_report(
     .bind(&notes)
     .bind(ai_reviewed)
     .bind(ai_review_notes)
+    .bind(user_id)
     .execute(db)
     .await;
 

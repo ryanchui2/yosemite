@@ -1,11 +1,12 @@
 use axum::{extract::State, Json};
 
+use crate::auth::middleware::AuthUser;
 use crate::models::fraud::{BenfordResponse, DuplicatesResponse};
 use crate::models::transaction::Transaction;
 use crate::services::{anomaly_service, llm};
 use crate::state::AppState;
 
-pub async fn benford(State(state): State<AppState>) -> Json<BenfordResponse> {
+pub async fn benford(AuthUser(_): AuthUser, State(state): State<AppState>) -> Json<BenfordResponse> {
     let transactions: Vec<Transaction> =
         sqlx::query_as::<_, Transaction>("SELECT * FROM transactions")
             .fetch_all(&state.db)
@@ -29,7 +30,7 @@ pub async fn benford(State(state): State<AppState>) -> Json<BenfordResponse> {
     Json(result)
 }
 
-pub async fn duplicates(State(state): State<AppState>) -> Json<DuplicatesResponse> {
+pub async fn duplicates(AuthUser(_): AuthUser, State(state): State<AppState>) -> Json<DuplicatesResponse> {
     let transactions: Vec<Transaction> =
         sqlx::query_as::<_, Transaction>("SELECT * FROM transactions")
             .fetch_all(&state.db)

@@ -1,10 +1,13 @@
 use axum::{extract::State, Json};
 
+use crate::auth::middleware::AuthUser;
+
 use crate::models::risk::{BusinessRiskRequest, BusinessRiskReport};
 use crate::services::{llm, open_sanctions, ucdp};
 use crate::state::AppState;
 
 pub async fn business_risk(
+    AuthUser(_): AuthUser,
     State(state): State<AppState>,
     Json(payload): Json<BusinessRiskRequest>,
 ) -> Json<BusinessRiskReport> {

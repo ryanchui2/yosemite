@@ -1,4 +1,6 @@
 use axum::{extract::State, http::StatusCode, Json};
+
+use crate::auth::middleware::AuthUser;
 use std::collections::HashMap;
 
 use crate::models::fraud::{
@@ -18,6 +20,7 @@ use crate::state::AppState;
 ///
 /// Returns a composite risk score and an AI-generated verdict with recommended action.
 pub async fn investigate(
+    AuthUser(_): AuthUser,
     State(state): State<AppState>,
     Json(payload): Json<EntityInvestigateRequest>,
 ) -> Result<Json<EntityInvestigationResponse>, (StatusCode, String)> {

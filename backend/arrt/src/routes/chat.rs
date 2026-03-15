@@ -1,4 +1,6 @@
 use axum::{extract::State, http::StatusCode, Json};
+
+use crate::auth::middleware::AuthUser;
 use serde::{Deserialize, Serialize};
 
 use crate::services::llm;
@@ -48,6 +50,7 @@ pub struct ChatResponse {
 ///   sanctions_summary: "1 match. GlobalTex Imports Ltd → 91% confidence, EU Consolidated List."
 ///   geo_summary:      "Iran: CRITICAL (88/100). Russia: HIGH (72/100)."
 pub async fn respond(
+    AuthUser(_): AuthUser,
     State(state): State<AppState>,
     Json(payload): Json<ChatRequest>,
 ) -> Result<Json<ChatResponse>, (StatusCode, String)> {

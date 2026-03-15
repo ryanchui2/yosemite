@@ -1,6 +1,8 @@
 use axum::{extract::State, Json};
 use std::collections::HashMap;
+use uuid::Uuid;
 
+use crate::auth::middleware::AuthUser;
 use crate::models::fraud::{
     FraudReportRequest, FraudReportResponse, FraudReportSummaryContent, FraudReportSummaryResponse,
     FraudResult, ScoringTx,
@@ -10,19 +12,24 @@ use crate::services::llm;
 use crate::state::AppState;
 
 pub async fn report(
+    AuthUser(claims): AuthUser,
     State(state): State<AppState>,
     Json(payload): Json<FraudReportRequest>,
 ) -> Json<FraudReportResponse> {
+    let user_id: Option<Uuid> = claims.sub.parse().ok();
+    let reported_by = Some(claims.email.clone());
+
     let result = sqlx::query(
-        "INSERT INTO fraud_reports (transaction_id, confirmed_fraud, reported_by, notes, ai_reviewed, ai_review_notes)
-         VALUES ($1, $2, $3, $4, $5, $6)"
+        "INSERT INTO fraud_reports (transaction_id, confirmed_fraud, reported_by, notes, ai_reviewed, ai_review_notes, user_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)"
     )
     .bind(&payload.transaction_id)
     .bind(payload.confirmed_fraud)
-    .bind(&payload.reported_by)
+    .bind(&reported_by)
     .bind(&payload.notes)
     .bind(payload.ai_reviewed.unwrap_or(false))
     .bind(&payload.ai_review_notes)
+    .bind(user_id)
     .execute(&state.db)
     .await;
 
@@ -43,27 +50,21 @@ pub async fn report(
     }
 }
 
-pub async fn summary(State(state): State<AppState>) -> Json<FraudReportSummaryResponse> {
-    let cached: Option<serde_json::Value> =
-        sqlx::query_scalar("SELECT summary_response FROM fraud_scan_cache WHERE id = 1")
-            .fetch_optional(&state.db)
-            .await
-            .unwrap_or(None);
-
-    if let Some(ref v) = cached {
-        if let Ok(resp) = serde_json::from_value::<FraudReportSummaryResponse>(v.clone()) {
-            return Json(resp);
-        }
-    }
+pub async fn summary(AuthUser(claims): AuthUser, State(state): State<AppState>) -> Json<FraudReportSummaryResponse> {
+    let user_id: Uuid = match claims.sub.parse() {
+        Ok(id) => id,
+        Err(_) => return Json(empty_summary()),
+    };
 
     let transactions = sqlx::query_as::<_, ScoringTx>("SELECT * FROM transactions")
         .fetch_all(&state.db)
         .await
         .unwrap_or_default();
 
-    // Fetch all fraud reports to merge them into the summary context
+    // Fetch only this user's fraud reports
     let reports = sqlx::query!(
-        "SELECT transaction_id, confirmed_fraud, notes, ai_review_notes FROM fraud_reports"
+        "SELECT transaction_id, confirmed_fraud, notes, ai_review_notes FROM fraud_reports WHERE user_id = $1",
+        user_id
     )
     .fetch_all(&state.db)
     .await
@@ -140,12 +141,18 @@ pub async fn summary(State(state): State<AppState>) -> Json<FraudReportSummaryRe
         }
     };
 
-    let json = serde_json::to_value(&response).unwrap_or_default();
-    let _ = sqlx::query("UPDATE fraud_scan_cache SET summary_response = $1, updated_at = NOW() WHERE id = 1")
-        .bind(&json)
-        .execute(&state.db)
-        .await;
     Json(response)
+}
+
+fn empty_summary() -> FraudReportSummaryResponse {
+    FraudReportSummaryResponse {
+        report_count: 0,
+        ai_generated: false,
+        common_vulnerabilities: vec![],
+        potential_reasons: vec![],
+        improvement_advice: vec![],
+        disclaimer: String::new(),
+    }
 }
 
 fn build_report_context(results: &[FraudResult]) -> String {

@@ -1,6 +1,7 @@
 use axum::{extract::State, Json};
 use std::collections::HashMap;
 
+use crate::auth::middleware::AuthUser;
 use crate::models::fraud::{FraudResult, ScanRequest, ScanResponse, ScoringTx};
 use crate::services::{anomaly_service, fraud_rules, llm};
 use crate::state::AppState;
@@ -98,7 +99,7 @@ async fn run_scan(state: &AppState, payload: &ScanRequest) -> ScanResponse {
 }
 
 /// GET /api/fraud/scan — return cached scan result, or run once and cache. Avoids re-running on refresh.
-pub async fn get_cached_scan(State(state): State<AppState>) -> Json<ScanResponse> {
+pub async fn get_cached_scan(AuthUser(_): AuthUser, State(state): State<AppState>) -> Json<ScanResponse> {
     let cached: Option<serde_json::Value> =
         sqlx::query_scalar("SELECT scan_response FROM fraud_scan_cache WHERE id = 1")
             .fetch_optional(&state.db)
@@ -123,6 +124,7 @@ pub async fn get_cached_scan(State(state): State<AppState>) -> Json<ScanResponse
 
 /// POST /api/fraud/scan — run scan and update cache.
 pub async fn scan(
+    AuthUser(_): AuthUser,
     State(state): State<AppState>,
     Json(payload): Json<ScanRequest>,
 ) -> Json<ScanResponse> {
