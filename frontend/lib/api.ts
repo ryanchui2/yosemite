@@ -330,7 +330,7 @@ export async function scanAnomalies(file: File): Promise<AnomaliesResponse> {
     risk_level:
       r.risk_score >= 70 ? "HIGH" : r.risk_score >= 40 ? "MEDIUM" : "LOW",
     reasons: r.triggered_rules,
-    ai_explanation: r.ai_review_notes ?? "",
+    ai_explanation: r.ai_review_notes ?? r.vision_summary ?? "",
   }));
 
   return {
