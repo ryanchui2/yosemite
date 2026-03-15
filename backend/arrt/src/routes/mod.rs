@@ -2,6 +2,7 @@ pub mod advanced;
 pub mod document;
 pub mod fraud;
 pub mod fraud_report;
+pub mod georisk;
 pub mod pipeline;
 pub mod risk;
 pub mod sanctions;

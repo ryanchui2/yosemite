@@ -172,6 +172,45 @@ pub struct FraudReportSummaryResponse {
     pub disclaimer: String,
 }
 
+// ── Sanctions Screening ───────────────────────────────────────────────────────
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SanctionsResult {
+    pub uploaded_name: String,
+    pub matched_name: String,
+    pub confidence: f64,
+    pub risk_level: String, // "HIGH", "MEDIUM", "LOW"
+    pub sanctions_list: String,
+    pub reason: String,
+    pub ai_explanation: String,
+    pub action: String,
+}
+
+#[derive(Serialize)]
+pub struct SanctionsResponse {
+    pub scan_id: String,
+    pub total_entities: usize,
+    pub flagged: usize,
+    pub results: Vec<SanctionsResult>,
+}
+
+// ── Geopolitical Risk ─────────────────────────────────────────────────────────
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GeoRiskResult {
+    pub country: String,
+    pub risk_score: u32,
+    pub risk_level: String, // "CRITICAL", "HIGH", "MEDIUM", "LOW"
+    pub conflict_events_90d: u32,
+    pub fatalities_90d: u32,
+    pub ai_briefing: String,
+}
+
+#[derive(Serialize)]
+pub struct GeoRiskResponse {
+    pub results: Vec<GeoRiskResult>,
+}
+
 // ── Pipeline ──────────────────────────────────────────────────────────────────
 
 /// Outcome for a single transaction processed by the pipeline.

@@ -15,7 +15,8 @@ use crate::state::AppState;
 /// POST /api/sanctions/scan
 ///
 /// Accept multipart/form-data with a CSV file (field name optional).
-/// CSV must have a header row with a "description" column (case-insensitive).
+/// CSV must have a header row with a `description`, `name`, `entity_name`,
+/// `company`, or `vendor` column (case-insensitive).
 /// Each row is searched against OpenSanctions; matches are returned.
 pub async fn scan(
     State(state): State<AppState>,
@@ -40,7 +41,7 @@ pub async fn scan(
 
     let bytes = file_bytes.ok_or((
         StatusCode::BAD_REQUEST,
-        "No file uploaded. Send a CSV as multipart/form-data.".to_string(),
+        "No file uploaded. Send a CSV as multipart/form-data field 'file'.".to_string(),
     ))?;
 
     let mut reader = ReaderBuilder::new()
@@ -52,16 +53,23 @@ pub async fn scan(
         .headers()
         .map_err(|e| (StatusCode::UNPROCESSABLE_ENTITY, format!("CSV headers: {}", e)))?
         .clone();
-    let name_idx = headers
+
+    let name_idx = ["description", "name", "entity_name", "company", "vendor"]
         .iter()
-        .position(|h| h.trim().to_lowercase() == "description")
+        .find_map(|target| {
+            headers
+                .iter()
+                .position(|h| h.trim().eq_ignore_ascii_case(target))
+        })
         .ok_or((
             StatusCode::UNPROCESSABLE_ENTITY,
-            "CSV must have a 'description' column.".to_string(),
+            "CSV must have one of: 'description', 'name', 'entity_name', 'company', or 'vendor'."
+                .to_string(),
         ))?;
+
     let country_idx = headers
         .iter()
-        .position(|h| h.trim().to_lowercase() == "country");
+        .position(|h| h.trim().eq_ignore_ascii_case("country"));
 
     let mut total_entities = 0_usize;
     let mut results: Vec<SanctionsScanResult> = Vec::new();

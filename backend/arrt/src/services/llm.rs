@@ -3,10 +3,18 @@ use serde_json::json;
 
 use crate::models::fraud::FraudReportSummaryContent;
 use crate::models::risk::{BusinessRiskReport, ConflictEvent, SanctionsHit};
+use crate::models::fraud::{GeoRiskResult, SanctionsResult};
 
-const OPENAI_BASE_URL: &str =
-    "https://vjioo4r1vyvcozuj.us-east-2.aws.endpoints.huggingface.cloud/v1";
 const MODEL: &str = "openai/gpt-oss-120b";
+
+fn hf_base_url() -> String {
+    std::env::var("HF_BASE_URL")
+        .unwrap_or_else(|_| "https://vjioo4r1vyvcozuj.us-east-2.aws.endpoints.huggingface.cloud/v1".to_string())
+}
+
+fn hf_api_key() -> String {
+    std::env::var("HF_API_KEY").unwrap_or_default()
+}
 
 pub async fn explain_fraud(
     triggered_rules: &[String],
@@ -18,8 +26,8 @@ pub async fn explain_fraud(
     let prompt = build_prompt(transaction_id, risk_score, &rules_text);
 
     let resp = client
-        .post(format!("{}/chat/completions", OPENAI_BASE_URL))
-        .header("Authorization", "Bearer test")
+        .post(format!("{}/chat/completions", hf_base_url()))
+        .header("Authorization", format!("Bearer {}", hf_api_key()))
         .header("Content-Type", "application/json")
         .json(&json!({
             "model": MODEL,
@@ -58,8 +66,8 @@ pub async fn summarize_fraud_reports(
     let prompt = build_report_summary_prompt(report_context);
 
     let resp = client
-        .post(format!("{}/chat/completions", OPENAI_BASE_URL))
-        .header("Authorization", "Bearer test")
+        .post(format!("{}/chat/completions", hf_base_url()))
+        .header("Authorization", format!("Bearer {}", hf_api_key()))
         .header("Content-Type", "application/json")
         .json(&json!({
             "model": MODEL,
@@ -91,6 +99,117 @@ pub async fn summarize_fraud_reports(
     let summary = serde_json::from_str::<FraudReportSummaryContent>(&normalized)?;
 
     Ok(summary)
+}
+
+pub async fn screen_entities(
+    names: &[String],
+) -> Result<Vec<SanctionsResult>, Box<dyn std::error::Error + Send + Sync>> {
+    let client = Client::new();
+    let names_list = names
+        .iter()
+        .enumerate()
+        .map(|(i, n)| format!("{}. {}", i + 1, n))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let prompt = format!(
+        "You are an AML compliance analyst. Screen the following entities against known sanctions \
+        patterns and lists (OFAC SDN, EU Consolidated, UN, FATF High-Risk).\n\n\
+        Entities to screen:\n{}\n\n\
+        Return a JSON array with one object per entity in order:\n\
+        [\n  {{\n    \
+          \"uploaded_name\": \"<original name>\",\n    \
+          \"matched_name\": \"<closest match or same if none>\",\n    \
+          \"confidence\": <0.0-1.0>,\n    \
+          \"risk_level\": \"HIGH|MEDIUM|LOW\",\n    \
+          \"sanctions_list\": \"<OFAC SDN|EU Consolidated|UN|FATF High-Risk|None>\",\n    \
+          \"reason\": \"<brief reason or 'No match found'>\",\n    \
+          \"ai_explanation\": \"<1-2 sentence professional explanation>\",\n    \
+          \"action\": \"<Block|Enhanced Due Diligence|Clear>\"\n  \
+        }}\n]\nReturn only the JSON array. No markdown.",
+        names_list
+    );
+
+    let resp = client
+        .post(format!("{}/chat/completions", hf_base_url()))
+        .header("Authorization", format!("Bearer {}", hf_api_key()))
+        .header("Content-Type", "application/json")
+        .json(&serde_json::json!({
+            "model": MODEL,
+            "messages": [
+                { "role": "system", "content": "You are an AML compliance analyst. Return only valid JSON arrays, no markdown." },
+                { "role": "user", "content": prompt }
+            ],
+            "max_tokens": 1200,
+            "temperature": 0.1
+        }))
+        .send()
+        .await?
+        .json::<serde_json::Value>()
+        .await?;
+
+    let message = &resp["choices"][0]["message"];
+    let text = message["content"]
+        .as_str()
+        .or_else(|| message["reasoning"].as_str())
+        .unwrap_or("[]")
+        .trim();
+
+    let normalized = normalize_json_payload(text);
+    let results = serde_json::from_str::<Vec<SanctionsResult>>(&normalized)?;
+    Ok(results)
+}
+
+pub async fn analyze_geo_risk(
+    countries: &[String],
+) -> Result<Vec<GeoRiskResult>, Box<dyn std::error::Error + Send + Sync>> {
+    let client = Client::new();
+    let countries_list = countries.join(", ");
+
+    let prompt = format!(
+        "You are a geopolitical risk analyst. Assess the risk level for each country based on \
+        conflict, political instability, sanctions exposure, and financial crime risk.\n\n\
+        Countries: {}\n\n\
+        Return a JSON array with one object per country in order:\n\
+        [\n  {{\n    \
+          \"country\": \"<country name>\",\n    \
+          \"risk_score\": <integer 0-100>,\n    \
+          \"risk_level\": \"CRITICAL|HIGH|MEDIUM|LOW\",\n    \
+          \"conflict_events_90d\": <estimated integer>,\n    \
+          \"fatalities_90d\": <estimated integer>,\n    \
+          \"ai_briefing\": \"<2-3 sentence professional risk briefing>\"\n  \
+        }}\n]\nReturn only the JSON array. No markdown.",
+        countries_list
+    );
+
+    let resp = client
+        .post(format!("{}/chat/completions", hf_base_url()))
+        .header("Authorization", format!("Bearer {}", hf_api_key()))
+        .header("Content-Type", "application/json")
+        .json(&serde_json::json!({
+            "model": MODEL,
+            "messages": [
+                { "role": "system", "content": "You are a geopolitical risk analyst. Return only valid JSON arrays, no markdown." },
+                { "role": "user", "content": prompt }
+            ],
+            "max_tokens": 1200,
+            "temperature": 0.2
+        }))
+        .send()
+        .await?
+        .json::<serde_json::Value>()
+        .await?;
+
+    let message = &resp["choices"][0]["message"];
+    let text = message["content"]
+        .as_str()
+        .or_else(|| message["reasoning"].as_str())
+        .unwrap_or("[]")
+        .trim();
+
+    let normalized = normalize_json_payload(text);
+    let results = serde_json::from_str::<Vec<GeoRiskResult>>(&normalized)?;
+    Ok(results)
 }
 
 fn build_prompt(transaction_id: &str, risk_score: u32, rules: &str) -> String {
@@ -220,8 +339,8 @@ pub async fn explain_sanctions_entity(
     );
 
     let resp = client
-        .post(format!("{}/chat/completions", OPENAI_BASE_URL))
-        .header("Authorization", "Bearer test")
+        .post(format!("{}/chat/completions", hf_base_url()))
+        .header("Authorization", format!("Bearer {}", hf_api_key()))
         .header("Content-Type", "application/json")
         .json(&json!({
             "model": MODEL,
@@ -271,8 +390,8 @@ pub async fn analyze_business_risk(
     let prompt = build_risk_prompt(business_description, sanctions_hits, conflict_events);
 
     let resp = client
-        .post(format!("{}/chat/completions", OPENAI_BASE_URL))
-        .header("Authorization", "Bearer test")
+        .post(format!("{}/chat/completions", hf_base_url()))
+        .header("Authorization", format!("Bearer {}", hf_api_key()))
         .header("Content-Type", "application/json")
         .json(&json!({
             "model": MODEL,
