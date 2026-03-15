@@ -4,22 +4,71 @@ const BACKEND_URL =
   process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:3001";
 
 async function apiFetch(input: string, init: RequestInit = {}): Promise<Response> {
-  const token = getAccessToken();
+  let token = getAccessToken();
+  // #region agent log
+  const path = typeof input === "string" ? input.replace(/^.*\/api/, "/api") : "";
+  fetch("http://127.0.0.1:7242/ingest/a3ba57d6-4434-4c97-9efb-bd3955e640d5", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      location: "api.ts:apiFetch",
+      message: "apiFetch entry",
+      data: { path, hasToken: !!token },
+      timestamp: Date.now(),
+      hypothesisId: "H1",
+    }),
+  }).catch(() => { });
+  // #endregion
+  // If no token in memory, try refresh once so we send Authorization when the session cookie is valid
+  if (!token) {
+    const newToken = await refreshAccessToken();
+    if (newToken) {
+      setAccessToken(newToken);
+      token = newToken;
+    }
+    // #region agent log
+    fetch("http://127.0.0.1:7242/ingest/a3ba57d6-4434-4c97-9efb-bd3955e640d5", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        location: "api.ts:apiFetch-after-refresh",
+        message: "after refresh attempt",
+        data: { path, hadNoToken: true, refreshGotToken: !!newToken },
+        timestamp: Date.now(),
+        hypothesisId: "H2",
+      }),
+    }).catch(() => { });
+    // #endregion
+  }
   const headers = new Headers(init.headers as HeadersInit | undefined);
   if (token) headers.set("Authorization", `Bearer ${token}`);
+  // #region agent log
+  const hasAuth = headers.has("Authorization");
+  fetch("http://127.0.0.1:7242/ingest/a3ba57d6-4434-4c97-9efb-bd3955e640d5", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      location: "api.ts:apiFetch-before-fetch",
+      message: "request headers before fetch",
+      data: { path, hasAuthHeader: hasAuth },
+      timestamp: Date.now(),
+      hypothesisId: "H3",
+    }),
+  }).catch(() => { });
+  // #endregion
 
   const res = await fetch(input, { ...init, headers, credentials: "include" });
 
   if (res.status === 401) {
-    // Try refresh once
+    // Try refresh once (e.g. token expired)
     const newToken = await refreshAccessToken();
     if (newToken) {
       setAccessToken(newToken);
       headers.set("Authorization", `Bearer ${newToken}`);
       return fetch(input, { ...init, headers, credentials: "include" });
     }
-    // Refresh failed — redirect to landing page
-    if (typeof window !== "undefined") {
+    // Refresh failed — redirect to landing page only if not already there (avoids reload loop)
+    if (typeof window !== "undefined" && window.location.pathname !== "/") {
       window.location.href = "/";
     }
   }

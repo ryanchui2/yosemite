@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useEffect, useState } from "react";
 import {
+  getAccessToken,
   loginRequest,
   logoutRequest,
   refreshAccessToken,
@@ -22,7 +23,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<UserInfo | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // On mount, try to restore session via refresh token cookie
+  // On mount, try to restore session via refresh token cookie, then fall back to stored access token (e.g. cross-origin where cookie isn't sent)
   useEffect(() => {
     refreshAccessToken().then((token) => {
       if (token) {
@@ -30,6 +31,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const payload = parseJwtPayload(token);
         if (payload) {
           setUser({ id: payload.sub, email: payload.email, role: payload.role });
+        }
+      } else {
+        const stored = getAccessToken();
+        if (stored) {
+          const payload = parseJwtPayload(stored);
+          if (payload) {
+            setUser({ id: payload.sub, email: payload.email, role: payload.role });
+          }
         }
       }
       setIsLoading(false);
