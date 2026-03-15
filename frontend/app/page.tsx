@@ -281,7 +281,7 @@ export default function Dashboard() {
   const sidebarItems: { id: SidebarTab; label: string; icon: React.ReactNode }[] = [
     { id: "overview", label: "overview", icon: <Cuboid className="h-4 w-4" /> },
     { id: "anomaly", label: "anomaly detector", icon: <Drama className="h-4 w-4" /> },
-    { id: "geosanctions", label: "geo & sanctions", icon: <Globe className="h-4 w-4" /> },
+    { id: "geosanctions", label: "geo & sanctions", icon: <Ship className="h-4 w-4" /> },
   ];
 
   return (
