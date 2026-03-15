@@ -60,26 +60,6 @@ export function KeyMetrics({
     );
   }
 
-  // #region agent log
-  fetch("http://127.0.0.1:7242/ingest/a3ba57d6-4434-4c97-9efb-bd3955e640d5", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      location: "KeyMetrics.tsx:display",
-      message: "stats displayed",
-      hypothesisId: ["C", "D"],
-      data: {
-        total_volume: stats.total_volume,
-        total_transactions: stats.total_transactions,
-        volume_this_month: stats.volume_this_month,
-        volume_last_month: stats.volume_last_month,
-        top_vendors: stats.top_vendors.map((v) => ({ name: v.name, volume: v.volume, transaction_count: v.transaction_count })),
-      },
-      timestamp: Date.now(),
-    }),
-  }).catch(() => { });
-  // #endregion
-
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">

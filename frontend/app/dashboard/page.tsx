@@ -208,55 +208,7 @@ export default function Dashboard() {
   useEffect(() => {
     let cancelled = false;
     setFraudScanLoading(true);
-    // #region agent log
-    fetch("http://127.0.0.1:7242/ingest/a3ba57d6-4434-4c97-9efb-bd3955e640d5", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        location: "page.tsx:mount-fraud-effect",
-        message: "Overview fraud load effect running",
-        data: { hypothesisId: "H1" },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => { });
-    // #endregion
-    const runCachedScan = () => {
-      // #region agent log
-      fetch(
-        "http://127.0.0.1:7242/ingest/a3ba57d6-4434-4c97-9efb-bd3955e640d5",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            location: "page.tsx:fetchCachedFraudScan-call",
-            message: "Calling fetchCachedFraudScan (GET)",
-            data: { hypothesisId: "H1", runId: "post-fix" },
-            timestamp: Date.now(),
-          }),
-        },
-      ).catch(() => { });
-      // #endregion
-      return fetchCachedFraudScan();
-    };
-    const runSummary = () => {
-      // #region agent log
-      fetch(
-        "http://127.0.0.1:7242/ingest/a3ba57d6-4434-4c97-9efb-bd3955e640d5",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            location: "page.tsx:fetchSummary-call",
-            message: "Calling fetchFraudReportSummary (GET)",
-            data: { hypothesisId: "H1", runId: "post-fix" },
-            timestamp: Date.now(),
-          }),
-        },
-      ).catch(() => { });
-      // #endregion
-      return fetchFraudReportSummary();
-    };
-    Promise.allSettled([runCachedScan(), runSummary()])
+    Promise.allSettled([fetchCachedFraudScan(), fetchFraudReportSummary()])
       .then(([scanResult, summaryResult]) => {
         if (cancelled) return;
         if (scanResult.status === "fulfilled")
@@ -597,21 +549,6 @@ export default function Dashboard() {
         file = rowsToCSVFile(headers, newRowsOnly);
       }
 
-      // #region agent log
-      fetch(
-        "http://127.0.0.1:7242/ingest/a3ba57d6-4434-4c97-9efb-bd3955e640d5",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            location: "page.tsx:scanAnomalies-call",
-            message: "Calling scanAnomalies (user action)",
-            data: { hypothesisId: "H2" },
-            timestamp: Date.now(),
-          }),
-        },
-      ).catch(() => { });
-      // #endregion
       const data = await scanAnomalies(file);
 
       let finalAnomalyState: {
@@ -743,18 +680,6 @@ export default function Dashboard() {
 
   /** Apply a saved log to the workspace (used by auto-load on start and by manual load). */
   const applySavedLog = useCallback((saved: SavedCsvData) => {
-    // #region agent log
-    fetch("http://127.0.0.1:7242/ingest/a3ba57d6-4434-4c97-9efb-bd3955e640d5", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        location: "page.tsx:applySavedLog",
-        message: "Applying saved anomaly log (no scan)",
-        data: { hypothesisId: "H2" },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => { });
-    // #endregion
     const headers = Array.isArray(saved.headers)
       ? (saved.headers as string[])
       : [];
@@ -839,18 +764,6 @@ export default function Dashboard() {
 
   /** Apply a saved entity list to the workspace (used by auto-load on start). */
   const applySavedEntityLog = useCallback((saved: SavedEntityData) => {
-    // #region agent log
-    fetch("http://127.0.0.1:7242/ingest/a3ba57d6-4434-4c97-9efb-bd3955e640d5", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        location: "page.tsx:applySavedEntityLog",
-        message: "Applying saved entity log (no scan)",
-        data: { hypothesisId: "H3" },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => { });
-    // #endregion
     const entities = Array.isArray(saved.entities)
       ? (saved.entities as { description: string; country: string }[])
       : [];
@@ -934,18 +847,6 @@ export default function Dashboard() {
         ? analyzeGeoRisk(uniqueCountries)
         : Promise.resolve(null);
 
-    // #region agent log
-    fetch("http://127.0.0.1:7242/ingest/a3ba57d6-4434-4c97-9efb-bd3955e640d5", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        location: "page.tsx:handleSanctionsScan",
-        message: "Running sanctions/geo scan (user action)",
-        data: { hypothesisId: "H3" },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => { });
-    // #endregion
     try {
       const [sanctionsResult, geoResult] = await Promise.allSettled([
         sanctionsPromise,

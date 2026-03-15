@@ -1,20 +1,10 @@
 use axum::{extract::State, Json};
 use chrono::{DateTime, Utc};
 use serde::Serialize;
-use std::io::Write;
 use uuid::Uuid;
 
 use crate::auth::middleware::AuthUser;
 use crate::state::AppState;
-
-// #region agent log
-fn debug_log(data: serde_json::Value) {
-    let path = "/Users/ryanalumkal/Documents/GitHub/arrt/.cursor/debug.log";
-    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
-        let _ = writeln!(f, "{}", data.to_string());
-    }
-}
-// #endregion
 
 #[derive(Serialize)]
 pub struct TopVendor {
@@ -115,31 +105,6 @@ pub async fn get_stats(
         transaction_count: r.transaction_count,
     })
     .collect();
-
-    // #region agent log
-    let diag: (Option<f64>, Option<f64>, i64) = sqlx::query_as(
-        "SELECT MAX(amount), SUM(amount), COUNT(*)::bigint FROM transactions",
-    )
-    .fetch_one(&state.db)
-    .await
-    .unwrap_or((None, None, 0));
-    debug_log(serde_json::json!({
-        "location": "stats.rs:get_stats",
-        "message": "stats computed",
-        "hypothesisId": ["A","B","E"],
-        "data": {
-            "total_volume_returned": volume_row.0,
-            "volume_this_month": volume_this_month.0,
-            "volume_last_month": volume_last_month.0,
-            "total_transactions": total_row.0,
-            "db_max_amount": diag.0,
-            "db_sum_amount": diag.1,
-            "db_count": diag.2,
-            "first_top_vendor": top_vendors.first().map(|v| serde_json::json!({"name": v.name, "volume": v.volume, "transaction_count": v.transaction_count})),
-        },
-        "timestamp": chrono::Utc::now().timestamp_millis(),
-    }));
-    // #endregion
 
     Json(StatsResponse {
         total_transactions: total_row.0,

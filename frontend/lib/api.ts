@@ -458,29 +458,6 @@ export async function scanAnomalies(file: File): Promise<AnomaliesResponse> {
   }
   const pipeline: PipelineResponse = await res.json();
 
-  // #region agent log
-  const amounts = pipeline.results.map((r) => r.amount).filter((a): a is number => a != null);
-  const maxAmount = amounts.length ? Math.max(...amounts) : null;
-  const sumAmount = amounts.reduce((s, a) => s + a, 0);
-  fetch("http://127.0.0.1:7242/ingest/a3ba57d6-4434-4c97-9efb-bd3955e640d5", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      location: "api.ts:scanAnomalies",
-      message: "pipeline response mapped to anomaly results",
-      hypothesisId: ["anomaly_amount"],
-      data: {
-        resultsCount: pipeline.results.length,
-        maxAmount,
-        sumAmount,
-        sampleAmounts: amounts.slice(0, 5),
-        firstResultAmount: pipeline.results[0]?.amount ?? null,
-      },
-      timestamp: Date.now(),
-    }),
-  }).catch(() => { });
-  // #endregion
-
   const mapped: AnomalyResult[] = pipeline.results.map((r, i) => ({
     row_index: i,
     date: r.timestamp ?? new Date().toISOString().split("T")[0],
