@@ -6,12 +6,12 @@ pub fn score(tx: &Transaction) -> (u32, Vec<String>) {
 
     // --- Round Amount (structuring / laundering signal) ---
     if let Some(amt) = tx.amount {
-    let cents = (amt * 100.0).round() as u64;
-    if cents % 100 == 0 && amt >= 1000.0 {
-        score += 15;
-        rules.push(format!("Suspiciously round amount: ${:.0}", amt));
+        let cents = (amt * 100.0).round() as u64;
+        if cents % 100 == 0 && amt >= 1000.0 {
+            score += 15;
+            rules.push(format!("Suspiciously round amount: ${:.0}", amt));
+        }
     }
-}
 
     // --- Identity / Card Verification ---
     if tx.cvv_match == Some(false) {
@@ -75,13 +75,13 @@ pub fn score(tx: &Transaction) -> (u32, Vec<String>) {
     }
 
     if tx.ip_is_vpn == Some(true) {
-    if let Some(ref device) = tx.device_type {
-        if device.to_lowercase().contains("mobile") {
-            score += 15;
-            rules.push("Mobile device with VPN active".to_string());
+        if let Some(ref device) = tx.device_type {
+            if device.to_lowercase().contains("mobile") {
+                score += 15;
+                rules.push("Mobile device with VPN active".to_string());
+            }
         }
     }
-}
 
     (score, rules)
 }

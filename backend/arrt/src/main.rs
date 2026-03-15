@@ -60,7 +60,6 @@ async fn main() {
         .route("/api/fraud/benford", get(routes::advanced::benford))
         .route("/api/fraud/duplicates", get(routes::advanced::duplicates))
         .route("/api/fraud/document", post(routes::document::analyze))
-        .route("/api/fraud/sanctions", post(routes::sanctions::scan))
         .route("/api/fraud/georisk", post(routes::georisk::analyze))
         .route("/api/fraud/pipeline", post(routes::pipeline::ingest))
         .route("/api/risk/business", post(routes::risk::business_risk))
