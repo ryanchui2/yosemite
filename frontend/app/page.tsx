@@ -82,7 +82,7 @@ function DropZone({
         <input
           ref={inputRef}
           type="file"
-          accept=".csv"
+          accept=".csv,.pdf"
           className="hidden"
           onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f); }}
         />
@@ -94,7 +94,7 @@ function DropZone({
         ) : (
           <div className="flex flex-col items-center gap-1.5">
             <Upload className="h-4 w-4 text-muted-foreground" />
-            <p className="text-xs text-muted-foreground">Drop CSV or click to browse</p>
+            <p className="text-xs text-muted-foreground">Drop CSV/PDF or click to browse</p>
             <p className="text-[11px] text-muted-foreground/60">{hint}</p>
           </div>
         )}
@@ -193,15 +193,20 @@ export default function Dashboard() {
 
   function handleAnomalyFile(file: File) {
     setCsvOriginalFile(file);
-    file.text().then((text) => {
-      const { headers, rows } = parseCSV(text);
-      setCsvHeaders(headers);
-      setCsvRows(rows);
       setCsvFileName(file.name);
       setAnomaliesData(null);
       setError(null);
-    });
-  }
+      if (file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")) {
+        setCsvHeaders([]);
+        setCsvRows([]);
+      } else {
+        file.text().then((text) => {
+          const { headers, rows } = parseCSV(text);
+          setCsvHeaders(headers);
+          setCsvRows(rows);
+        });
+      }
+    }
 
   function addManualTransaction() {
     if (!manualTxInput.customer_name.trim()) return;
@@ -228,13 +233,15 @@ export default function Dashboard() {
   }
 
   async function handleRunAnalysis() {
-    if (!csvRows.length && !manualTransactions.length) return;
+    if (!csvRows.length && !manualTransactions.length && !csvOriginalFile) return;
     setAnomaliesLoading(true);
     setError(null);
     try {
       let file: File;
 
-      if (manualTransactions.length === 0 && csvOriginalFile) {
+      if (csvOriginalFile && (csvOriginalFile.type === "application/pdf" || csvOriginalFile.name.toLowerCase().endsWith(".pdf"))) {
+        file = csvOriginalFile;
+      } else if (manualTransactions.length === 0 && csvOriginalFile) {
         // No manual entries — send the original uploaded file untouched to avoid
         // any lossy parse→reconstruct round-trip corrupting fraud signal columns.
         file = csvOriginalFile;
@@ -546,7 +553,7 @@ export default function Dashboard() {
                     )}
                   </div>
 
-                  <Button className="w-full" disabled={anomaliesLoading || (csvRows.length === 0 && manualTransactions.length === 0)} onClick={handleRunAnalysis}>
+                  <Button className="w-full" disabled={anomaliesLoading || (csvRows.length === 0 && manualTransactions.length === 0 && !csvOriginalFile)} onClick={handleRunAnalysis}>
                     {anomaliesLoading ? "Analyzing..." : "Run Analysis"}
                   </Button>
                 </div>
@@ -567,13 +574,13 @@ export default function Dashboard() {
                   <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-[0.2em]">Anomaly Report</span>
                 </div>
                 <div className="p-6">
-                  {csvHeaders.length > 0 || manualTransactions.length > 0 ? (
+                  {csvHeaders.length > 0 || manualTransactions.length > 0 || csvOriginalFile ? (
                     <div className="space-y-5">
                       <div className="flex items-center justify-between">
                         <p className="text-xs text-muted-foreground font-mono">
-                          {csvRows.length + (csvHeaders.length > 0 ? 0 : manualTransactions.length)} row{(csvRows.length + manualTransactions.length) !== 1 ? "s" : ""} — click any cell to edit
+                          {(csvOriginalFile?.type === "application/pdf" || csvOriginalFile?.name.toLowerCase().endsWith(".pdf")) ? "1 PDF document" : `${csvRows.length + (csvHeaders.length > 0 ? 0 : manualTransactions.length)} row${(csvRows.length + manualTransactions.length) !== 1 ? "s" : ""} — click any cell to edit`}
                         </p>
-                        <Button disabled={anomaliesLoading || (csvRows.length === 0 && manualTransactions.length === 0)} onClick={handleRunAnalysis}>
+                        <Button disabled={anomaliesLoading || (csvRows.length === 0 && manualTransactions.length === 0 && !csvOriginalFile)} onClick={handleRunAnalysis}>
                           {anomaliesLoading ? "Analyzing..." : "Run Analysis"}
                         </Button>
                       </div>
@@ -583,7 +590,7 @@ export default function Dashboard() {
                   ) : (
                     <div className="py-16 text-center text-muted-foreground">
                       <AlertTriangle className="h-6 w-6 mx-auto mb-3 opacity-30" />
-                      <p className="text-xs uppercase tracking-wider">Upload a transaction CSV to get started.</p>
+                      <p className="text-xs uppercase tracking-wider">Upload a transaction CSV or PDF to get started.</p>
                     </div>
                   )}
                 </div>
