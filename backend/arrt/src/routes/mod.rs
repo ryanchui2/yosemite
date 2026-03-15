@@ -1,4 +1,5 @@
 pub mod advanced;
+pub mod agent_scan;
 pub mod document;
 pub mod entity;
 pub mod fraud;
