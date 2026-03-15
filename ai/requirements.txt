@@ -3,3 +3,7 @@ uvicorn
 scikit-learn
 pandas
 gunicorn
+railtracks
+railtracks-cli
+python-dotenv
+httpx

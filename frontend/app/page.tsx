@@ -15,20 +15,42 @@ import Image from "next/image";
 
 type Report = "anomalies" | "sanctions";
 
+/** RFC 4180-compliant CSV line parser — handles quoted fields with embedded commas. */
+function parseCSVLine(line: string): string[] {
+  const values: string[] = [];
+  let current = "";
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQuotes) {
+      if (ch === '"' && line[i + 1] === '"') { current += '"'; i++; }
+      else if (ch === '"') { inQuotes = false; }
+      else { current += ch; }
+    } else {
+      if (ch === '"') { inQuotes = true; }
+      else if (ch === ',') { values.push(current.trim()); current = ""; }
+      else { current += ch; }
+    }
+  }
+  values.push(current.trim());
+  return values;
+}
+
 function parseCSV(text: string): { headers: string[]; rows: Record<string, string>[] } {
   const lines = text.trim().split(/\r?\n/);
-  const headers = lines[0].split(",").map((h) => h.trim().replace(/^"|"$/g, ""));
-  const rows = lines.slice(1).map((line) => {
-    const values = line.split(",").map((v) => v.trim().replace(/^"|"$/g, ""));
+  const headers = parseCSVLine(lines[0]);
+  const rows = lines.slice(1).filter(Boolean).map((line) => {
+    const values = parseCSVLine(line);
     return Object.fromEntries(headers.map((h, i) => [h, values[i] ?? ""]));
   });
   return { headers, rows };
 }
 
 function rowsToCSVFile(headers: string[], rows: Record<string, string>[]): File {
+  const quote = (v: string) => `"${v.replace(/"/g, '""')}"`;
   const lines = [
-    headers.join(","),
-    ...rows.map((r) => headers.map((h) => r[h] ?? "").join(",")),
+    headers.map(quote).join(","),
+    ...rows.map((r) => headers.map((h) => quote(r[h] ?? "")).join(",")),
   ];
   return new File([lines.join("\n")], "data.csv", { type: "text/csv" });
 }
@@ -142,6 +164,7 @@ export default function Dashboard() {
   const [csvHeaders, setCsvHeaders] = useState<string[]>([]);
   const [csvRows, setCsvRows] = useState<Record<string, string>[]>([]);
   const [csvFileName, setCsvFileName] = useState<string | undefined>();
+  const [csvOriginalFile, setCsvOriginalFile] = useState<File | null>(null);
 
   type ManualTx = {
     customer_name: string;
@@ -173,6 +196,7 @@ export default function Dashboard() {
   const [error, setError] = useState<string | null>(null);
 
   function handleAnomalyFile(file: File) {
+    setCsvOriginalFile(file);
     file.text().then((text) => {
       const { headers, rows } = parseCSV(text);
       setCsvHeaders(headers);
@@ -213,34 +237,42 @@ export default function Dashboard() {
     setAnomaliesLoading(true);
     setError(null);
     try {
-      const TX_HEADERS = [
-        "transaction_id", "customer_name", "timestamp", "amount", "currency",
-        "payment_method", "card_last4", "card_brand", "ip_country", "ip_is_vpn",
-        "device_type", "cvv_match", "address_match",
-      ];
-      const headers = csvHeaders.length ? csvHeaders : TX_HEADERS;
-      const allRows: Record<string, string>[] = [
-        ...csvRows,
-        ...manualTransactions.map((t) => ({
-          transaction_id: crypto.randomUUID(),
-          customer_name: t.customer_name,
-          timestamp: t.timestamp,
-          amount: t.amount,
-          currency: t.currency,
-          payment_method: t.payment_method,
-          card_last4: t.card_last4,
-          card_brand: t.card_brand,
-          ip_country: t.ip_country,
-          ip_is_vpn: String(t.ip_is_vpn),
-          device_type: t.device_type,
-          cvv_match: String(t.cvv_match),
-          address_match: String(t.address_match),
-        })),
-      ];
-      // Sync merged data into table state so the report renders with all rows
-      setCsvHeaders(headers);
-      setCsvRows(allRows);
-      const file = rowsToCSVFile(headers, allRows);
+      let file: File;
+
+      if (manualTransactions.length === 0 && csvOriginalFile) {
+        // No manual entries — send the original uploaded file untouched to avoid
+        // any lossy parse→reconstruct round-trip corrupting fraud signal columns.
+        file = csvOriginalFile;
+      } else {
+        const TX_HEADERS = [
+          "transaction_id", "customer_name", "timestamp", "amount", "currency",
+          "payment_method", "card_last4", "card_brand", "ip_country", "ip_is_vpn",
+          "device_type", "cvv_match", "address_match",
+        ];
+        const headers = csvHeaders.length ? csvHeaders : TX_HEADERS;
+        const allRows: Record<string, string>[] = [
+          ...csvRows,
+          ...manualTransactions.map((t) => ({
+            transaction_id: crypto.randomUUID(),
+            customer_name: t.customer_name,
+            timestamp: t.timestamp,
+            amount: t.amount,
+            currency: t.currency,
+            payment_method: t.payment_method,
+            card_last4: t.card_last4,
+            card_brand: t.card_brand,
+            ip_country: t.ip_country,
+            ip_is_vpn: String(t.ip_is_vpn),
+            device_type: t.device_type,
+            cvv_match: String(t.cvv_match),
+            address_match: String(t.address_match),
+          })),
+        ];
+        setCsvHeaders(headers);
+        setCsvRows(allRows);
+        file = rowsToCSVFile(headers, allRows);
+      }
+
       const data = await scanAnomalies(file);
       setAnomaliesData(data);
     } catch {

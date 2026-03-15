@@ -283,7 +283,10 @@ export async function scanAnomalies(file: File): Promise<AnomaliesResponse> {
     method: "POST",
     body: form,
   });
-  if (!res.ok) throw new Error(`Anomaly scan failed: ${res.status}`);
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    throw new Error(`Anomaly scan failed: ${res.status}${detail ? ` — ${detail}` : ""}`);
+  }
   const pipeline: PipelineResponse = await res.json();
 
   const mapped: AnomalyResult[] = pipeline.results.map((r, i) => ({
