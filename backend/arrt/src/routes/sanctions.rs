@@ -3,6 +3,8 @@ use axum::{
     http::StatusCode,
     Json,
 };
+
+use crate::auth::middleware::AuthUser;
 use csv::ReaderBuilder;
 use std::collections::{HashMap, HashSet};
 use std::io::Cursor;
@@ -22,6 +24,7 @@ use crate::state::AppState;
 /// Each row is searched against OpenSanctions; matches are returned.
 /// If a `country` column is present, geopolitical risk is also assessed per country.
 pub async fn scan(
+    AuthUser(_): AuthUser,
     State(state): State<AppState>,
     mut multipart: Multipart,
 ) -> Result<Json<SanctionsScanResponse>, (StatusCode, String)> {

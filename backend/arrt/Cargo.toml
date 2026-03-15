@@ -20,3 +20,7 @@ csv = "1.3"
 uuid = { version = "1", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 urlencoding = "2"
+jsonwebtoken = "9"
+argon2 = "0.5"
+rand = { version = "0.8", features = ["std"] }
+sha2 = "0.10"

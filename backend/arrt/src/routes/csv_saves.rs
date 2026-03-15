@@ -1,9 +1,10 @@
 use axum::{extract::{State, Path}, http::StatusCode, Json};
 use serde::Deserialize;
+use uuid::Uuid;
 
+use crate::auth::middleware::AuthUser;
 use crate::models::saved_csv::{SaveCsvRequest, SavedCsvData};
 use crate::state::AppState;
-use uuid::Uuid;
 
 #[derive(Deserialize)]
 pub(crate) struct CsvSaveIdPath {
@@ -11,8 +12,8 @@ pub(crate) struct CsvSaveIdPath {
 }
 
 /// POST /api/csv-saves
-/// Save CSV data (before or after scan) to the database.
 pub async fn create(
+    AuthUser(claims): AuthUser,
     State(state): State<AppState>,
     Json(payload): Json<SaveCsvRequest>,
 ) -> Result<Json<SavedCsvData>, (StatusCode, String)> {
@@ -23,26 +24,24 @@ pub async fn create(
         ));
     }
 
-    let headers_json = serde_json::to_value(&payload.headers).map_err(|e| {
-        (
-            StatusCode::UNPROCESSABLE_ENTITY,
-            format!("Invalid headers: {}", e),
-        )
-    })?;
-    let rows_json = serde_json::to_value(&payload.rows).map_err(|e| {
-        (
-            StatusCode::UNPROCESSABLE_ENTITY,
-            format!("Invalid rows: {}", e),
-        )
+    let user_id: Uuid = claims.sub.parse().map_err(|_| {
+        (StatusCode::INTERNAL_SERVER_ERROR, "Invalid user id".to_string())
     })?;
 
-    let id = uuid::Uuid::new_v4();
+    let headers_json = serde_json::to_value(&payload.headers).map_err(|e| {
+        (StatusCode::UNPROCESSABLE_ENTITY, format!("Invalid headers: {}", e))
+    })?;
+    let rows_json = serde_json::to_value(&payload.rows).map_err(|e| {
+        (StatusCode::UNPROCESSABLE_ENTITY, format!("Invalid rows: {}", e))
+    })?;
+
+    let id = Uuid::new_v4();
     let created_at = chrono::Utc::now();
 
     sqlx::query(
         r#"
-        INSERT INTO saved_csv_data (id, name, stage, file_name, headers, rows, scan_id, scan_summary, scan_results, created_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        INSERT INTO saved_csv_data (id, name, stage, file_name, headers, rows, scan_id, scan_summary, scan_results, created_at, user_id)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
         "#,
     )
     .bind(id)
@@ -55,13 +54,11 @@ pub async fn create(
     .bind(&payload.scan_summary)
     .bind(&payload.scan_results)
     .bind(created_at)
+    .bind(user_id)
     .execute(&state.db)
     .await
     .map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to save CSV data: {}", e),
-        )
+        (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to save CSV data: {}", e))
     })?;
 
     let saved = SavedCsvData {
@@ -81,42 +78,47 @@ pub async fn create(
 }
 
 /// GET /api/csv-saves
-/// List saved CSV snapshots, most recent first.
 pub async fn list(
+    AuthUser(claims): AuthUser,
     State(state): State<AppState>,
 ) -> Result<Json<Vec<SavedCsvData>>, (StatusCode, String)> {
+    let user_id: Uuid = claims.sub.parse().map_err(|_| {
+        (StatusCode::INTERNAL_SERVER_ERROR, "Invalid user id".to_string())
+    })?;
+
     let rows = sqlx::query_as::<_, SavedCsvData>(
         "SELECT id, name, stage, file_name, headers, rows, scan_id, scan_summary, scan_results, created_at
          FROM saved_csv_data
+         WHERE user_id = $1
          ORDER BY created_at DESC"
     )
+    .bind(user_id)
     .fetch_all(&state.db)
     .await
     .map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to list saved CSV data: {}", e),
-        )
+        (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to list saved CSV data: {}", e))
     })?;
 
     Ok(Json(rows))
 }
 
 /// DELETE /api/csv-saves/:id
-/// Remove a saved transaction log.
 pub async fn delete(
+    AuthUser(claims): AuthUser,
     State(state): State<AppState>,
     Path(CsvSaveIdPath { id }): Path<CsvSaveIdPath>,
 ) -> Result<StatusCode, (StatusCode, String)> {
-    let result = sqlx::query("DELETE FROM saved_csv_data WHERE id = $1")
+    let user_id: Uuid = claims.sub.parse().map_err(|_| {
+        (StatusCode::INTERNAL_SERVER_ERROR, "Invalid user id".to_string())
+    })?;
+
+    let result = sqlx::query("DELETE FROM saved_csv_data WHERE id = $1 AND user_id = $2")
         .bind(id)
+        .bind(user_id)
         .execute(&state.db)
         .await
         .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to delete saved data: {}", e),
-            )
+            (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to delete saved data: {}", e))
         })?;
     if result.rows_affected() == 0 {
         return Err((StatusCode::NOT_FOUND, "Saved log not found".to_string()));

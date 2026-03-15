@@ -4,6 +4,8 @@ use axum::{
     Json,
 };
 
+use crate::auth::middleware::AuthUser;
+
 use crate::models::fraud::{
     PipelineOutcome, PipelineResponse, PipelineResult, ScoringTx, TransactionInput,
 };
@@ -24,9 +26,11 @@ const CSV_TYPE: &str = "text/csv";
 /// Routes the input through the correct parsing + scoring + reporting path.
 #[axum::debug_handler]
 pub async fn ingest(
+    AuthUser(claims): AuthUser,
     State(state): State<AppState>,
     mut multipart: Multipart,
 ) -> Result<Json<PipelineResponse>, (StatusCode, String)> {
+    let user_id = uuid::Uuid::parse_str(&claims.sub).ok();
     // ── Extract file bytes and content-type ───────────────────────────────────
     let mut file_bytes: Option<Vec<u8>> = None;
     let mut mime_type = "application/octet-stream".to_string();
@@ -93,11 +97,13 @@ pub async fn ingest(
     };
 
     let total = transactions.len();
-    let mut results: Vec<PipelineResult> = Vec::with_capacity(total);
+    let mut results: Vec<PipelineResult> = Vec::with_capacity(total + 1);
 
     // ── Score + route each transaction ────────────────────────────────────────
     for input in transactions {
-        // Capture display fields before consuming input into ScoringTx
+        // ... (existing loop content remains same)
+        save_transaction(&state.db, &input).await;
+
         let customer_name = input.customer_name.clone();
         let amount = input.amount;
         let timestamp = input.timestamp.clone();
@@ -106,9 +112,8 @@ pub async fn ingest(
         let (risk_score, triggered_rules) = fraud_rules::score(&tx);
 
         if risk_score < CLEAN_THRESHOLD {
-            // ── CLEAN — no action ─────────────────────────────────────────────
             results.push(PipelineResult {
-                transaction_id: tx.transaction_id,
+                transaction_id: tx.transaction_id.clone(),
                 customer_name,
                 amount,
                 timestamp,
@@ -119,15 +124,15 @@ pub async fn ingest(
                 vision_summary: None,
             });
         } else if risk_score > FRAUD_THRESHOLD {
-            // ── HIGH RISK — save report immediately ───────────────────────────
             save_fraud_report(
                 &state.db,
                 &tx.transaction_id,
                 risk_score,
                 &triggered_rules,
                 false,
-                None,
                 vision_summary.as_deref(),
+                None,
+                user_id,
             )
             .await;
 
@@ -139,16 +144,14 @@ pub async fn ingest(
                 risk_score,
                 outcome: PipelineOutcome::FraudReportSaved,
                 triggered_rules,
-                ai_review_notes: None,
+                ai_review_notes: vision_summary.clone(),
                 vision_summary: vision_summary.clone(),
             });
         } else {
-            // ── AMBIGUOUS (20–70) — deep AI review then save report ───────────
             let ai_notes = llm::explain_fraud(&state.http, &triggered_rules, &tx.transaction_id, risk_score)
                 .await
                 .ok();
 
-            // For PDF inputs, attach vision context to the notes
             let combined_notes = match (&ai_notes, &vision_summary) {
                 (Some(n), Some(v)) => Some(format!("{}\n{}", n, v)),
                 (Some(n), None) => Some(n.clone()),
@@ -163,7 +166,8 @@ pub async fn ingest(
                 &triggered_rules,
                 true,
                 combined_notes.as_deref(),
-                None, // already merged above
+                None,
+                user_id,
             )
             .await;
 
@@ -176,6 +180,46 @@ pub async fn ingest(
                 outcome: PipelineOutcome::DeepReviewAndReportSaved,
                 triggered_rules,
                 ai_review_notes: combined_notes,
+                vision_summary: vision_summary.clone(),
+            });
+        }
+    }
+
+    // ── Document-level Fallback ───────────────────────────────────────────────
+    // If no transactions were found, but the document itself (Vision) is HIGH RISK,
+    // add a document-level anomaly result so the user sees the phishing/fraud signal.
+    if results.is_empty() && vision_summary.is_some() {
+        // Look for "score=X" in the vision_summary note to recover the score
+        let score = vision_summary.as_ref()
+            .and_then(|s| s.split("score=").nth(1))
+            .and_then(|s| s.split(' ').next())
+            .and_then(|s| s.parse::<u32>().ok())
+            .unwrap_or(0);
+
+        if score >= FRAUD_THRESHOLD {
+            let doc_id = format!("DOC-ANOMALY-{}", &uuid::Uuid::new_v4().to_string()[..8]);
+            
+            save_fraud_report(
+                &state.db,
+                &doc_id,
+                score,
+                &vec!["High document-level risk".to_string()],
+                false,
+                vision_summary.as_deref(),
+                None,
+                user_id,
+            )
+            .await;
+
+            results.push(PipelineResult {
+                transaction_id: doc_id,
+                customer_name: Some("Document Analysis".to_string()),
+                amount: None,
+                timestamp: Some(chrono::Utc::now().to_rfc3339()),
+                risk_score: score,
+                outcome: PipelineOutcome::FraudReportSaved,
+                triggered_rules: vec!["Forensic analysis suggests fraudulent document content".to_string()],
+                ai_review_notes: vision_summary.clone(),
                 vision_summary: vision_summary.clone(),
             });
         }
@@ -251,6 +295,7 @@ async fn save_fraud_report(
     ai_reviewed: bool,
     ai_review_notes: Option<&str>,
     extra_notes: Option<&str>,
+    user_id: Option<uuid::Uuid>,
 ) {
     let base_notes = format!(
         "Pipeline auto-report. Score: {}. Rules: {}",
@@ -263,8 +308,8 @@ async fn save_fraud_report(
     };
 
     let result = sqlx::query(
-        "INSERT INTO fraud_reports (transaction_id, confirmed_fraud, reported_by, notes, ai_reviewed, ai_review_notes)
-         VALUES ($1, $2, $3, $4, $5, $6)
+        "INSERT INTO fraud_reports (transaction_id, confirmed_fraud, reported_by, notes, ai_reviewed, ai_review_notes, user_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
          ON CONFLICT DO NOTHING"
     )
     .bind(transaction_id)
@@ -273,10 +318,56 @@ async fn save_fraud_report(
     .bind(&notes)
     .bind(ai_reviewed)
     .bind(ai_review_notes)
+    .bind(user_id)
     .execute(db)
     .await;
 
     if let Err(e) = result {
         tracing::error!("Pipeline: failed to save fraud report for {}: {}", transaction_id, e);
+    }
+}
+
+/// Insert a parsed transaction into the DB so it appears in the main dashboard lists.
+async fn save_transaction(db: &sqlx::PgPool, tx: &TransactionInput) {
+    let result = sqlx::query(
+        "INSERT INTO transactions (
+            transaction_id, customer_name, amount, timestamp,
+            cvv_match, avs_result, address_match,
+            ip_is_vpn, ip_country, device_type,
+            card_present, entry_mode, refund_status
+         )
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+         ON CONFLICT (transaction_id) DO UPDATE SET
+            customer_name = EXCLUDED.customer_name,
+            amount = EXCLUDED.amount,
+            timestamp = EXCLUDED.timestamp,
+            cvv_match = EXCLUDED.cvv_match,
+            avs_result = EXCLUDED.avs_result,
+            address_match = EXCLUDED.address_match,
+            ip_is_vpn = EXCLUDED.ip_is_vpn,
+            ip_country = EXCLUDED.ip_country,
+            device_type = EXCLUDED.device_type,
+            card_present = EXCLUDED.card_present,
+            entry_mode = EXCLUDED.entry_mode,
+            refund_status = EXCLUDED.refund_status"
+    )
+    .bind(&tx.transaction_id)
+    .bind(&tx.customer_name)
+    .bind(tx.amount)
+    .bind(&tx.timestamp)
+    .bind(tx.cvv_match)
+    .bind(&tx.avs_result)
+    .bind(tx.address_match)
+    .bind(tx.ip_is_vpn)
+    .bind(&tx.ip_country)
+    .bind(&tx.device_type)
+    .bind(tx.card_present)
+    .bind(&tx.entry_mode)
+    .bind(&tx.refund_status)
+    .execute(db)
+    .await;
+
+    if let Err(e) = result {
+        tracing::error!("Pipeline: failed to save transaction {}: {}", tx.transaction_id, e);
     }
 }

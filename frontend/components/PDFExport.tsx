@@ -50,19 +50,41 @@ export function PDFExport({ sanctionsData, anomaliesData, geoRiskData }: Props) 
       lines.push("");
     }
 
-    const win = window.open("", "_blank");
-    if (!win) return;
-    win.document.write(`<pre style="font-family:monospace;padding:24px;white-space:pre-wrap">${lines.join("\n")}</pre>`);
-    win.document.close();
-    win.print();
+    const frame = document.createElement("iframe");
+    frame.style.position = "fixed";
+    frame.style.right = "0";
+    frame.style.bottom = "0";
+    frame.style.width = "0";
+    frame.style.height = "0";
+    frame.style.border = "0";
+    frame.setAttribute("aria-hidden", "true");
+    document.body.appendChild(frame);
+
+    const doc = frame.contentWindow?.document;
+    if (!doc) {
+      document.body.removeChild(frame);
+      return;
+    }
+
+    doc.open();
+    doc.write(`<pre style="font-family:monospace;padding:24px;white-space:pre-wrap">${lines.join("\n")}</pre>`);
+    doc.close();
+
+    frame.onload = () => {
+      frame.contentWindow?.focus();
+      frame.contentWindow?.print();
+      setTimeout(() => {
+        if (document.body.contains(frame)) document.body.removeChild(frame);
+      }, 1000);
+    };
   }
 
   return (
     <button
       onClick={handleExport}
-      className="px-4 py-1.5 text-[10px] uppercase tracking-wider border border-border hover:border-foreground/40 text-foreground transition-colors font-medium"
+      className="px-4 py-1.5 text-[10px] tracking-wider border border-border hover:border-foreground/40 text-foreground transition-colors font-medium"
     >
-      Export PDF
+    report
     </button>
   );
 }

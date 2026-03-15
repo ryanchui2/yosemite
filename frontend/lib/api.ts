@@ -1,5 +1,31 @@
+import { getAccessToken, refreshAccessToken, setAccessToken } from "@/lib/auth";
+
 const BACKEND_URL =
   process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:3001";
+
+async function apiFetch(input: string, init: RequestInit = {}): Promise<Response> {
+  const token = getAccessToken();
+  const headers = new Headers(init.headers as HeadersInit | undefined);
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+
+  const res = await fetch(input, { ...init, headers, credentials: "include" });
+
+  if (res.status === 401) {
+    // Try refresh once
+    const newToken = await refreshAccessToken();
+    if (newToken) {
+      setAccessToken(newToken);
+      headers.set("Authorization", `Bearer ${newToken}`);
+      return fetch(input, { ...init, headers, credentials: "include" });
+    }
+    // Refresh failed — redirect to login
+    if (typeof window !== "undefined") {
+      window.location.href = "/login";
+    }
+  }
+
+  return res;
+}
 
 // ── Types matching Rust backend ───────────────────────────────────────────────
 
@@ -79,7 +105,7 @@ export interface Transaction {
 
 /** GET cached fraud scan (used on page load; does not re-run scan). */
 export async function fetchCachedFraudScan(): Promise<FraudScanResponse> {
-  const res = await fetch(`${BACKEND_URL}/api/fraud/scan`);
+  const res = await apiFetch(`${BACKEND_URL}/api/fraud/scan`);
   if (!res.ok) throw new Error(`Fraud scan failed: ${res.status}`);
   return res.json();
 }
@@ -88,7 +114,7 @@ export async function fetchCachedFraudScan(): Promise<FraudScanResponse> {
 export async function scanFraud(
   transactionIds?: string[],
 ): Promise<FraudScanResponse> {
-  const res = await fetch(`${BACKEND_URL}/api/fraud/scan`, {
+  const res = await apiFetch(`${BACKEND_URL}/api/fraud/scan`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(
@@ -100,7 +126,7 @@ export async function scanFraud(
 }
 
 export async function fetchFraudReportSummary(): Promise<FraudReportSummary> {
-  const res = await fetch(`${BACKEND_URL}/api/fraud/report/summary`);
+  const res = await apiFetch(`${BACKEND_URL}/api/fraud/report/summary`);
   if (!res.ok) throw new Error(`Fraud report summary failed: ${res.status}`);
   return res.json();
 }
@@ -136,7 +162,7 @@ export async function agentScan(
 
 /** Fetch all transactions from the database */
 export async function fetchTransactions(): Promise<Transaction[]> {
-  const res = await fetch(`${BACKEND_URL}/api/transactions`);
+  const res = await apiFetch(`${BACKEND_URL}/api/transactions`);
   if (!res.ok) throw new Error(`Failed to fetch transactions: ${res.status}`);
   return res.json();
 }
@@ -162,7 +188,7 @@ export interface BenfordResponse {
 }
 
 export async function fetchBenford(): Promise<BenfordResponse> {
-  const res = await fetch(`${BACKEND_URL}/api/fraud/benford`);
+  const res = await apiFetch(`${BACKEND_URL}/api/fraud/benford`);
   if (!res.ok) throw new Error(`Benford analysis failed: ${res.status}`);
   return res.json();
 }
@@ -186,7 +212,7 @@ export interface DuplicatesResponse {
 }
 
 export async function fetchDuplicates(): Promise<DuplicatesResponse> {
-  const res = await fetch(`${BACKEND_URL}/api/fraud/duplicates`);
+  const res = await apiFetch(`${BACKEND_URL}/api/fraud/duplicates`);
   if (!res.ok) throw new Error(`Duplicate detection failed: ${res.status}`);
   return res.json();
 }
@@ -208,7 +234,7 @@ export async function analyzeDocument(
 ): Promise<DocumentFraudResponse> {
   const form = new FormData();
   form.append("file", file);
-  const res = await fetch(`${BACKEND_URL}/api/fraud/document`, {
+  const res = await apiFetch(`${BACKEND_URL}/api/fraud/document`, {
     method: "POST",
     body: form,
   });
@@ -244,7 +270,7 @@ export interface PipelineResponse {
 export async function ingestPipeline(file: File): Promise<PipelineResponse> {
   const form = new FormData();
   form.append("file", file);
-  const res = await fetch(`${BACKEND_URL}/api/fraud/pipeline`, {
+  const res = await apiFetch(`${BACKEND_URL}/api/fraud/pipeline`, {
     method: "POST",
     body: form,
   });
@@ -270,7 +296,7 @@ export interface FraudReportResponse {
 export async function submitFraudReport(
   data: FraudReportRequest,
 ): Promise<FraudReportResponse> {
-  const res = await fetch(`${BACKEND_URL}/api/fraud/report`, {
+  const res = await apiFetch(`${BACKEND_URL}/api/fraud/report`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
@@ -323,7 +349,7 @@ export interface AnomaliesResponse {
 export async function scanSanctions(file: File): Promise<SanctionsResponse> {
   const form = new FormData();
   form.append("file", file);
-  const res = await fetch(`${BACKEND_URL}/api/sanctions/scan`, {
+  const res = await apiFetch(`${BACKEND_URL}/api/sanctions/scan`, {
     method: "POST",
     body: form,
   });
@@ -350,7 +376,7 @@ export interface GeoRiskResponse {
 }
 
 export async function analyzeGeoRisk(countries: string[]): Promise<GeoRiskResponse> {
-  const res = await fetch(`${BACKEND_URL}/api/fraud/georisk`, {
+  const res = await apiFetch(`${BACKEND_URL}/api/fraud/georisk`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ countries }),
@@ -362,7 +388,7 @@ export async function analyzeGeoRisk(countries: string[]): Promise<GeoRiskRespon
 export async function scanAnomalies(file: File): Promise<AnomaliesResponse> {
   const form = new FormData();
   form.append("file", file);
-  const res = await fetch(`${BACKEND_URL}/api/fraud/pipeline`, {
+  const res = await apiFetch(`${BACKEND_URL}/api/fraud/pipeline`, {
     method: "POST",
     body: form,
   });
@@ -381,7 +407,7 @@ export async function scanAnomalies(file: File): Promise<AnomaliesResponse> {
     risk_level:
       r.risk_score >= 70 ? "HIGH" : r.risk_score >= 40 ? "MEDIUM" : "LOW",
     reasons: r.triggered_rules,
-    ai_explanation: r.ai_review_notes ?? "",
+    ai_explanation: r.ai_review_notes ?? r.vision_summary ?? "",
   }));
 
   return {
@@ -421,7 +447,7 @@ export interface SavedCsvData {
 export async function saveCsvData(
   data: SaveCsvRequest,
 ): Promise<SavedCsvData> {
-  const res = await fetch(`${BACKEND_URL}/api/csv-saves`, {
+  const res = await apiFetch(`${BACKEND_URL}/api/csv-saves`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
@@ -434,13 +460,13 @@ export async function saveCsvData(
 }
 
 export async function fetchSavedCsvList(): Promise<SavedCsvData[]> {
-  const res = await fetch(`${BACKEND_URL}/api/csv-saves`);
+  const res = await apiFetch(`${BACKEND_URL}/api/csv-saves`);
   if (!res.ok) throw new Error(`Failed to fetch saved CSV list: ${res.status}`);
   return res.json();
 }
 
 export async function deleteSavedCsv(id: string): Promise<void> {
-  const res = await fetch(`${BACKEND_URL}/api/csv-saves/${id}`, {
+  const res = await apiFetch(`${BACKEND_URL}/api/csv-saves/${id}`, {
     method: "DELETE",
   });
   if (!res.ok) {
@@ -475,7 +501,7 @@ export interface SavedEntityData {
 export async function saveEntityList(
   data: SaveEntityRequest,
 ): Promise<SavedEntityData> {
-  const res = await fetch(`${BACKEND_URL}/api/entity-saves`, {
+  const res = await apiFetch(`${BACKEND_URL}/api/entity-saves`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
@@ -488,13 +514,13 @@ export async function saveEntityList(
 }
 
 export async function fetchSavedEntityList(): Promise<SavedEntityData[]> {
-  const res = await fetch(`${BACKEND_URL}/api/entity-saves`);
+  const res = await apiFetch(`${BACKEND_URL}/api/entity-saves`);
   if (!res.ok) throw new Error(`Failed to fetch saved entity list: ${res.status}`);
   return res.json();
 }
 
 export async function deleteSavedEntity(id: string): Promise<void> {
-  const res = await fetch(`${BACKEND_URL}/api/entity-saves/${id}`, {
+  const res = await apiFetch(`${BACKEND_URL}/api/entity-saves/${id}`, {
     method: "DELETE",
   });
   if (!res.ok) {

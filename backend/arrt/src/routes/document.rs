@@ -4,11 +4,14 @@ use axum::{
     Json,
 };
 
+use crate::auth::middleware::AuthUser;
+
 use crate::models::fraud::DocumentFraudResponse;
 use crate::services::gemini_vision;
 use crate::state::AppState;
 
 pub async fn analyze(
+    AuthUser(_): AuthUser,
     State(state): State<AppState>,
     mut multipart: Multipart,
 ) -> Result<Json<DocumentFraudResponse>, (StatusCode, String)> {
