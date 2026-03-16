@@ -422,14 +422,6 @@ export default function Dashboard() {
       file.text().then((text) => {
         const { headers: newHeaders, rows: newRows } = parseCSV(text);
         // #region agent log
-        const amountKey = newHeaders.find((h) => h.toLowerCase() === "amount");
-        const parsedAmounts = amountKey
-          ? newRows
-              .map((r) => r[amountKey])
-              .filter(Boolean)
-              .map((s) => Number(s))
-          : [];
-        // const validAmounts = parsedAmounts.filter((n) => !Number.isNaN(n));xwww
         setCsvHeaders((prevHeaders) => {
           const merged = prevHeaders.length ? [...prevHeaders] : [];
           for (const h of newHeaders) {
