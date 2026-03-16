@@ -4,8 +4,7 @@ yosemite is a fraud detection and compliance intelligence platform for small bus
 
 > Forked from [anthonytoyco/arrt](https://github.com/anthonytoyco/arrt) — originally built for [GenAI Genesis 2026](https://devpost.com/software/arrt).
 
-[ITS SPINNING]([https://devpost.com/software/arrt](https://youtube.com/shorts/ZYSaP3N9WGs
-)
+[ITS SPINNING](https://devpost.com/software/arrt](https://youtube.com/shorts/ZYSaP3N9WGs)
 
 ## Features
 
