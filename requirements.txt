@@ -1,3 +1,0 @@
-# TD Best AI Hack — Financial Fraud Detection
-# Railtracks is used for multi-agent fraud analysis (see ai/requirements.txt for full AI deps).
-railtracks
